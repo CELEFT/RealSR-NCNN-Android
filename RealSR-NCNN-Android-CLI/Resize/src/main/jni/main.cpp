@@ -216,6 +216,7 @@ int main(int argc, char **argv)
             break;
         case L's':
             scale = _wtoi(optarg);
+            scale_d = _wtof(optarg);
             break;
         case L'm':
             model = optarg;
@@ -278,6 +279,8 @@ int main(int argc, char **argv)
     }
 #endif // _WIN32
 
+
+    std::cout << "build time: " << __DATE__ << " " << __TIME__ << std::endl;
 
     if (inputpath.empty()) {
         print_usage();
@@ -1054,11 +1057,15 @@ int main(int argc, char **argv)
 						break;
 					case 3:
 						image = cv::Mat(out_h, out_w, CV_8UC3, buf); // 3通道图像
-						//cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+#ifndef  _WIN32
+						cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+#endif
 						break;
 					case 4:
 						image = cv::Mat(out_h, out_w, CV_8UC4, buf); // 4通道图像
-						//cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
+#ifndef  _WIN32
+						cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
+#endif
 						break;
 					}
 					if (image.empty()) {

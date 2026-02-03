@@ -24,3 +24,5 @@ RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/my_app/*
 /RealSR-NCNN-Android-CLI/build
 RealSR-NCNN-Android-GUI/optimization_plan.md
 RealSR-NCNN-Android-CLI/*/src/main/jni/CMakeSettings.json
+/RealSR-NCNN-Android-CLI/assets/Win-x64
+/RealSR-NCNN-Android-CLI/assets/output

@@ -427,11 +427,15 @@ void* save(void* args)
                     break;
                 case 3:
                     image = cv::Mat(v.outimage.h, v.outimage.w, CV_8UC3, v.outimage.data); // 3通道图像
+#ifndef _WIN32
                     cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+#endif
                     break;
                 case 4:
                     image = cv::Mat(v.outimage.h, v.outimage.w, CV_8UC4, v.outimage.data); // 4通道图像
+#ifndef _WIN32
                     cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
+#endif
                     break;
             }
             if (image.empty()) {
@@ -444,26 +448,8 @@ void* save(void* args)
                 success = imwrite(v.outpath.c_str(), image);
 #endif
             }
-        }else if (ext == PATHSTR("webp") || ext == PATHSTR("WEBP"))
-        {
-            success = webp_save(v.outpath.c_str(), v.outimage.w, v.outimage.h, v.outimage.elempack, (const unsigned char*)v.outimage.data);
         }
-        else if (ext == PATHSTR("png") || ext == PATHSTR("PNG"))
-        {
-#if _WIN32
-            success = wic_encode_image(v.outpath.c_str(), v.outimage.w, v.outimage.h, v.outimage.elempack, v.outimage.data);
-#else
-            success = stbi_write_png(v.outpath.c_str(), v.outimage.w, v.outimage.h, v.outimage.elempack, v.outimage.data, 0);
-#endif
-        }
-        else if (ext == PATHSTR("jpg") || ext == PATHSTR("JPG") || ext == PATHSTR("jpeg") || ext == PATHSTR("JPEG"))
-        {
-#if _WIN32
-            success = wic_encode_jpeg_image(v.outpath.c_str(), v.outimage.w, v.outimage.h, v.outimage.elempack, v.outimage.data);
-#else
-            success = stbi_write_jpg(v.outpath.c_str(), v.outimage.w, v.outimage.h, v.outimage.elempack, v.outimage.data, 100);
-#endif
-        }
+
         if (success)
         {
             if (verbose)
