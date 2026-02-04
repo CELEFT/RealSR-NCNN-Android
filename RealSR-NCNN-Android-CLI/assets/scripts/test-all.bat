@@ -10,11 +10,31 @@ if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 set "WIN_X64_DIR=%ROOT_DIR%\Win-x64"
 set "INPUT_DIR=%ROOT_DIR%\input"
 set "OUTPUT_DIR=%ROOT_DIR%\output"
+set "REPORT_DIR=%ROOT_DIR%\report"
 
 set total_param_groups=0
 set total_output_files=0
 set total_passed_tests=0
 set total_failed_tests=0
+
+REM Create report directory
+if not exist "%REPORT_DIR%" mkdir "%REPORT_DIR%"
+
+REM Initialize CSV file with timestamp (using PowerShell for 24-hour format)
+for /f "usebackq tokens=*" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"`) do (
+    set "timestamp=%%a"
+)
+REM Get target program name for CSV filename
+if "%1"=="" (
+    set "csv_prog=all"
+) else (
+    set "csv_prog=%~1"
+    set "csv_prog=!csv_prog:-ncnn.exe=!"
+)
+set "CSV_FILE=%REPORT_DIR%\test_!csv_prog!_!timestamp!.csv"
+
+REM Write CSV header
+echo input_filename,program_name,param_group,params,output_filename>"%CSV_FILE%"
 
 if not exist "%WIN_X64_DIR%" (
     echo Error: Win-x64 directory not found at: %WIN_X64_DIR%
@@ -37,13 +57,59 @@ if !file_count! equ 0 (
     goto endscript
 )
 
-if "%1"=="help" goto showhelp
-if "%1"=="--help" goto showhelp
-if "%1"=="-h" goto showhelp
+REM Parse arguments
+set "target_program="
+set "generate_html=1"
 
-if "%1"=="" goto test_all
+:parse_args
+if "%1"=="" goto args_done
+if /i "%1"=="help" goto showhelp
+if /i "%1"=="--help" goto showhelp
+if /i "%1"=="-h" goto showhelp
+if /i "%1"=="--no-html" (
+    set "generate_html=0"
+    shift
+    goto parse_args
+)
+REM Check if argument is a valid program name
+if /i "%1"=="resize-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+if /i "%1"=="realcugan-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+if /i "%1"=="realsr-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+if /i "%1"=="srmd-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+if /i "%1"=="waifu2x-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+if /i "%1"=="mnnsr-ncnn.exe" (
+    set "target_program=%~1"
+    shift
+    goto parse_args
+)
+REM Unknown argument, skip it
+shift
+goto parse_args
 
-set "target_program=%~1"
+:args_done
+if "%target_program%"=="" goto test_all
+
+REM Program name already validated in parse_args, now jump to appropriate section
 if /i "%target_program%"=="resize-ncnn.exe" goto test_resize_only
 if /i "%target_program%"=="realcugan-ncnn.exe" goto test_realcugan_only
 if /i "%target_program%"=="realsr-ncnn.exe" goto test_realsr_only
@@ -60,7 +126,7 @@ echo Testing all programs...
 echo.
 call :block_resize
 call :block_realcugan
-call :block_realsr
+call :block_realsr_ncnn
 call :block_srmd
 call :block_waifu2x
 call :block_mnnsr
@@ -81,7 +147,7 @@ goto summary
 :test_realsr_only
 echo Testing single program: realsr-ncnn.exe
 echo.
-call :block_realsr
+call :block_realsr_ncnn
 goto summary
 
 :test_srmd_only
@@ -110,6 +176,9 @@ set "test_passed=0"
 
 echo Test parameter group %rt_index%: %rt_params%
 set /a total_param_groups+=1
+
+REM Extract program short name (remove -ncnn.exe suffix)
+set "prog_short=!rt_program:-ncnn.exe=!"
 
 for %%i in ("%INPUT_DIR%\*") do (
     set "input_file=%%i"
@@ -156,7 +225,7 @@ for %%i in ("%INPUT_DIR%\*") do (
         )
     )
 
-    set "output_name=!model_name!!scale_suffix!!denoise_suffix!_!input_name!!input_ext!"
+    set "output_name=!prog_short!_!model_name!!scale_suffix!!denoise_suffix!_!input_name!!input_ext!"
     set "output_file=%OUTPUT_DIR%\!output_name!"
 
     if exist "!output_file!" (
@@ -172,11 +241,17 @@ for %%i in ("%INPUT_DIR%\*") do (
         if !fsize! gtr 0 (
             set test_passed=1
             powershell -NoProfile -Command "Write-Host ([char]0x2705 + ' [OK] Test succeeded: ' + '!output_name!') -ForegroundColor Green"
+            REM Write to CSV: input_filename,program_name,param_group,params,output_filename
+            echo !input_name!!input_ext!,!prog_short!,!rt_index!,!rt_params!,!output_name!>>"%CSV_FILE%"
         ) else (
             powershell -NoProfile -Command "Write-Host ([char]0x274C + ' [FAIL] Empty output: ' + '!output_name!') -ForegroundColor Red"
+            REM Write to CSV: input_filename,program_name,param_group,params,(empty)
+            echo !input_name!!input_ext!,!prog_short!,!rt_index!,!rt_params!,>>"%CSV_FILE%"
         )
     ) else (
         powershell -NoProfile -Command "Write-Host ([char]0x274C + ' [FAIL] No output generated: ' + '!output_name!') -ForegroundColor Red"
+        REM Write to CSV: input_filename,program_name,param_group,params,(empty)
+        echo !input_name!!input_ext!,!prog_short!,!rt_index!,!rt_params!,>>"%CSV_FILE%"
     )
 )
 
@@ -224,7 +299,7 @@ call :run_test "%prog_name%" "-m models-pro -s 2 -n 0" 5
 echo.
 exit /b
 
-:block_realsr
+:block_realsr_ncnn
 set "prog_name=realsr-ncnn.exe"
 if not exist "%WIN_X64_DIR%\%prog_name%" (
     echo Program %prog_name% does not exist, skipping.
@@ -290,11 +365,38 @@ powershell -NoProfile -Command "Write-Host ('Total parameter groups tested: ' + 
 powershell -NoProfile -Command "Write-Host ('Total output files generated: ' + $env:total_output_files) -ForegroundColor Yellow"
 powershell -NoProfile -Command "Write-Host ([char]0x2705 + ' Total passed tests: ' + $env:total_passed_tests) -ForegroundColor Green"
 powershell -NoProfile -Command "Write-Host ([char]0x274C + ' Total failed tests: ' + $env:total_failed_tests) -ForegroundColor Red"
+
+REM Generate HTML report if enabled
+if !generate_html! equ 1 (
+    echo.
+    echo Generating HTML report...
+    python "%SCRIPT_DIR%\evaluate_image_consistency.py" "!CSV_FILE!"
+    
+    REM Open HTML report
+    for %%f in ("!CSV_FILE!") do (
+        set "html_file=%%~dpnf.html"
+        if exist "!html_file!" (
+            echo Opening HTML report: !html_file!
+            start "" "!html_file!"
+        )
+    )
+)
+
 goto endscript
 
 :showhelp
 echo Usage:
-echo test-all.bat [program_name]
+echo   test-all.bat [options] [program_name]
+echo.
+echo Options:
+echo   --no-html    Do not generate and open HTML report
+echo   -h, --help   Show this help message
+echo.
+echo Examples:
+echo   test-all.bat                    Test all programs
+echo   test-all.bat resize-ncnn.exe    Test only resize-ncnn.exe
+echo   test-all.bat --no-html          Test all programs without HTML report
+echo   test-all.bat --no-html waifu2x-ncnn.exe  Test waifu2x without HTML report
 goto endscript
 
 :endscript
