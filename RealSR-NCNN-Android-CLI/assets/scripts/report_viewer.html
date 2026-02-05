@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图像一致性评估报告</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .summary {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .summary h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .label {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stat-card.normal .number {
+            color: #28a745;
+        }
+        
+        .stat-card.mild .number {
+            color: #ffc107;
+        }
+        
+        .stat-card.moderate .number {
+            color: #fd7e14;
+        }
+        
+        .stat-card.severe .number {
+            color: #dc3545;
+        }
+        
+        .stat-card .number.total {
+            color: #333;
+        }
+        
+        .stat-card .number.empty {
+            color: #6c757d;
+        }
+        
+        .csv-stats {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .csv-stats h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .csv-stats div {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .csv-stats div > div {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .filter-controls {
+            // padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-controls h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .filter-controls select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .filter-controls button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .filter-controls button:hover {
+            background: #5568d3;
+        }
+        
+        .table-container {
+            padding: 30px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        thead {
+            background: #f8f9fa;
+        }
+        
+        th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        
+        th:hover {
+            background: #e9ecef;
+        }
+        
+        th.sort-asc::after {
+            content: ' ▲';
+            font-size: 10px;
+        }
+        
+        th.sort-desc::after {
+            content: ' ▼';
+            font-size: 10px;
+        }
+        
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        tbody tr.severity-normal {
+            background: #d4edda;
+        }
+        
+        tbody tr.severity-mild {
+            background: #fff3cd;
+        }
+        
+        tbody tr.severity-moderate {
+            background: #ffe8d1;
+        }
+        
+        tbody tr.severity-severe {
+            background: #f8d7da;
+        }
+        
+        tbody tr.severity-none {
+            background: #e2e3e5;
+        }
+        
+        .severity-normal {
+            color: #155724;
+            font-weight: bold;
+        }
+        
+        .severity-mild {
+            color: #856404;
+            font-weight: bold;
+        }
+        
+        .severity-moderate {
+            color: #c85a00;
+            font-weight: bold;
+        }
+        
+        .severity-severe {
+            color: #721c24;
+            font-weight: bold;
+        }
+        
+        .severity-none {
+            color: #6c757d;
+            font-weight: bold;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        .modal-content {
+            position: relative;
+            margin: auto;
+            padding: 20px;
+            width: 90%;
+            height: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            color: white;
+        }
+        
+        .modal-header h2 {
+            font-size: 20px;
+            flex: 1;
+        }
+        
+        .modal-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .modal-controls button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .modal-controls button:hover {
+            background: #5568d3;
+        }
+        
+        .modal-controls button.active {
+            background: #5568d3;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .modal-controls button.grabbing {
+            cursor: grabbing;
+        }
+        
+        .modal-body {
+            flex: 1;
+            width: 100%;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 40px;
+            position: relative;
+            background-image: 
+                linear-gradient(45deg, #222 25%, transparent 25%),
+                linear-gradient(-45deg, #222 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #222 75%),
+                linear-gradient(-45deg, transparent 75%, #222 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        
+        .modal-body img {
+            max-width: none;
+            max-height: none;
+            cursor: crosshair;
+            transition: transform 0.3s;
+        }
+        
+        .magnifier {
+            position: fixed;
+            width: 200px;
+            height: 200px;
+            border: 3px solid #667eea;
+            border-radius: 50%;
+            pointer-events: none;
+            display: none;
+            z-index: 1001;
+            background: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        .zoom-slider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+        }
+        
+        .zoom-slider input {
+            width: 150px;
+        }
+        
+        .background-selector {
+            display: flex;
+            gap: 10px;
+            color: white;
+        }
+        
+        .background-selector button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .background-selector button:hover {
+            background: #5568d3;
+        }
+        
+        .background-selector button.active {
+            background: #5568d3;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .file-selector {
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .file-selector h3 {
+            color: #856404;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .file-selector input[type="file"] {
+            display: none;
+        }
+        
+        .file-selector label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #ffc107;
+            color: #333;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .file-selector label:hover {
+            background: #e0a800;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>图像一致性评估报告</h1>
+            <p id="reportInfo">加载中...</p>
+            <p id="csvFileInfo" class="csv-file-info" style="margin-top: 10px; font-size: 12px; opacity: 0.8;">-</p>
+        </div>
+        
+        <div class="summary">
+            <div class="file-selector" id="fileSelector">
+                <h3>自动加载JS数据中...</h3>
+                <input type="file" id="jsonFileInput" accept=".json" onchange="loadJsonFromFile(event)">
+                <label for="jsonFileInput">手动选择JSON文件</label>
+            </div>
+            
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card" onclick="filterBySeverity('all')">
+                    <div class="number total" id="totalCount">0</div>
+                    <div class="label">全部测试</div>
+                </div>
+                <div class="stat-card" onclick="filterBySeverity('empty')">
+                    <div class="number empty" id="emptyCount">0</div>
+                    <div class="label">未输出</div>
+                </div>
+                <div class="stat-card" onclick="filterBySeverity('output')">
+                    <div class="number" id="outputCount">0</div>
+                    <div class="label">输出</div>
+                </div>
+                <div class="stat-card normal" onclick="filterBySeverity('normal')">
+                    <div class="number" id="normalCount">0</div>
+                    <div class="label">正常</div>
+                </div>
+                <div class="stat-card mild" onclick="filterBySeverity('mild')">
+                    <div class="number" id="mildCount">0</div>
+                    <div class="label">轻微异常</div>
+                </div>
+                <div class="stat-card moderate" onclick="filterBySeverity('moderate')">
+                    <div class="number" id="moderateCount">0</div>
+                    <div class="label">中度异常</div>
+                </div>
+                <div class="stat-card severe" onclick="filterBySeverity('severe')">
+                    <div class="number" id="severeCount">0</div>
+                    <div class="label">严重异常</div>
+                </div>
+            </div>
+            
+
+            
+            <div class="filter-controls">
+                <h3>筛选</h3>
+                <select id="programFilter" onchange="applyFilters()">
+                    <option value="all">所有程序</option>
+                </select>
+                <select id="inputFilter" onchange="applyFilters()">
+                    <option value="all">所有输入文件</option>
+                </select>
+                <button onclick="resetFilters()">重置筛选</button>
+                <button onclick="exportToCSV()">导出CSV</button>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">序号</th>
+                        <th onclick="sortTable(1)">输出文件名</th>
+                        <th onclick="sortTable(2)">输入文件名</th>
+                        <th onclick="sortTable(3)">程序</th>
+                        <th onclick="sortTable(4)">测试参数</th>
+                        <th onclick="sortTable(5)">输出尺寸</th>
+                        <th onclick="sortTable(6)">输入尺寸</th>
+                        <th onclick="sortTable(7)">透明度异常</th>
+                        <th onclick="sortTable(8)">透明度比例</th>
+                        <th onclick="sortTable(9)">Alpha异常分</th>
+                        <th onclick="sortTable(10)">SSIM</th>
+                        <th onclick="sortTable(11)">PSNR</th>
+                        <th onclick="sortTable(12)">通道比例</th>
+                        <th onclick="sortTable(13)">RGB异常分</th>
+                        <th onclick="sortTable(14)">综合得分</th>
+                        <th onclick="sortTable(15)">严重程度</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div id="imageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">图像查看</h2>
+                <div class="modal-controls">
+                    <button onclick="zoomIn()">+</button>
+                    <button onclick="zoomOut()">-</button>
+                    <button onclick="resetZoom()">↺</button>
+                    <div class="zoom-slider">
+                        <input type="range" id="zoomSlider" min="20" max="500" value="100" oninput="updateZoomFromSlider()">
+                        <span id="zoomValue">100%</span>
+                    </div>
+                    <div class="background-selector">
+                        <button onclick="changeBackground('gray')" class="active">灰色</button>
+                        <button onclick="changeBackground('black')">黑色</button>
+                        <button onclick="changeBackground('white')">白色</button>
+                        <button onclick="changeBackground('checkerboard')">棋盘格</button>
+                    </div>
+                    <button onclick="toggleMagnifier()" id="magnifierToggle" class="active">🔍</button>
+                    <button onclick="toggleHandTool()" id="handBtn">✋</button>
+                    <button onclick="closeModal()">×</button>
+                </div>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <img id="modalImage" src="" alt="Image">
+            </div>
+        </div>
+    </div>
+    
+    <div id="magnifier" class="magnifier"></div>
+    
+    <script data-js-path="">
+        let reportData = null;
+        let currentZoom = 1;
+        let currentFilter = 'all';
+        let currentSortColumn = -1;
+        let sortDirection = 'asc';
+        let magnifierEnabled = true;
+        let magnifierZoom = 2;
+        let currentBackground = 'gray';
+        let handToolEnabled = false;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let imageOffsetX = 0;
+        let imageOffsetY = 0;
+        
+        const scriptElement = document.currentScript;
+        let jsPath = scriptElement ? scriptElement.getAttribute('data-js-path') : '';
+        
+        function loadJsonFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    reportData = JSON.parse(e.target.result);
+                    document.getElementById('fileSelector').classList.add('hidden');
+                    renderReport();
+                } catch (error) {
+                    console.error('Error parsing JSON:', error);
+                    document.getElementById('reportInfo').textContent = 'JSON解析失败';
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        function loadReportData() {
+            if (!jsPath) {
+                const htmlPath = window.location.pathname;
+                const htmlFilename = htmlPath.split('/').pop().replace('.html', '');
+                jsPath = `../${htmlFilename}.js`;
+            }
+            
+            const script = document.createElement('script');
+            script.src = jsPath;
+            script.onload = function() {
+                if (typeof window.reportData !== 'undefined') {
+                    document.getElementById('fileSelector').classList.add('hidden');
+                    renderReport();
+                } else {
+                    document.getElementById('reportInfo').textContent = 'JS加载失败，请手动选择JSON文件';
+                }
+            };
+            script.onerror = function() {
+                console.error('Error loading JS:', jsPath);
+                document.getElementById('reportInfo').textContent = 'JS加载失败，请手动选择JSON文件';
+            };
+            document.head.appendChild(script);
+        }
+        
+        function renderReport() {
+            if (!window.reportData) return;
+            
+            document.getElementById('fileSelector').classList.add('hidden');
+            
+            const metadata = window.reportData.metadata;
+            const severityCounts = window.reportData.severity_counts;
+            const csvStats = window.reportData.csv_stats;
+            const results = window.reportData.results;
+            
+            document.getElementById('reportInfo').textContent = 
+                `生成时间: ${metadata.timestamp} | 总文件数: ${metadata.total_files}`;
+            
+            document.getElementById('outputCount').textContent = metadata.total_files;
+            document.getElementById('normalCount').textContent = severityCounts.normal;
+            document.getElementById('mildCount').textContent = severityCounts.mild;
+            document.getElementById('moderateCount').textContent = severityCounts.moderate;
+            document.getElementById('severeCount').textContent = severityCounts.severe;
+            
+            const totalCount = csvStats ? csvStats.total_csv : results.length;
+            const emptyCount = csvStats ? csvStats.empty : 0;
+            const outputCount = csvStats ? (csvStats.total_csv - csvStats.empty) : results.length;
+            
+            document.getElementById('totalCount').textContent = totalCount;
+            document.getElementById('emptyCount').textContent = emptyCount;
+            document.getElementById('outputCount').textContent = outputCount;
+            
+            if (csvStats) {
+                document.getElementById('csvFileInfo').textContent = `CSV文件: ${csvStats.csv_file || '-'}`;
+            } else {
+                document.getElementById('csvFileInfo').textContent = '-';
+            }
+            
+            populateFilters(results);
+            renderTable(results);
+        }
+        
+        function populateFilters(results) {
+            const programs = new Set();
+            const inputs = new Set();
+            
+            results.forEach(result => {
+                if (result.program) programs.add(result.program);
+                if (result.input_filename) inputs.add(result.input_filename);
+            });
+            
+            const programFilter = document.getElementById('programFilter');
+            programs.forEach(program => {
+                const option = document.createElement('option');
+                option.value = program;
+                option.textContent = program;
+                programFilter.appendChild(option);
+            });
+            
+            const inputFilter = document.getElementById('inputFilter');
+            inputs.forEach(input => {
+                const option = document.createElement('option');
+                option.value = input;
+                option.textContent = input;
+                inputFilter.appendChild(option);
+            });
+        }
+        
+        function renderTable(results) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            results.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.className = `severity-${result.overall.severity}`;
+                row.dataset.severity = result.overall.severity;
+                row.dataset.program = result.program || '';
+                row.dataset.input = result.input_filename || '';
+                row.dataset.has_output = result.has_output || false;
+                
+                row.innerHTML = `
+                    <td data-value="${index + 1}" onclick="showImageFromRow(this)" style="cursor: pointer; font-weight: bold;">${index + 1}</td>
+                    <td data-value="${result.output_filename || ''}">${result.output_filename || '-'}</td>
+                    <td data-value="${result.input_filename || ''}">${result.input_filename || '-'}</td>
+                    <td data-value="${result.program || ''}">${result.program || '-'}</td>
+                    <td data-value="${result.params || ''}">${result.params || '-'}</td>
+                    <td data-value="${result.output_size ? result.output_size[0] * result.output_size[1] : 0}">${result.output_size ? result.output_size[0] + 'x' + result.output_size[1] : '-'}</td>
+                    <td data-value="${result.input_size ? result.input_size[0] * result.input_size[1] : 0}">${result.input_size ? result.input_size[0] + 'x' + result.input_size[1] : '-'}</td>
+                    <td data-value="${result.alpha_anomalies?.sudden_transparency_severity || ''}">${result.alpha_anomalies?.sudden_transparency_severity || '-'}</td>
+                    <td data-value="${result.alpha_anomalies?.sudden_transparency_ratio || 0}">${result.alpha_anomalies?.sudden_transparency_ratio?.toFixed(4) || '-'}</td>
+                    <td data-value="${result.alpha_anomalies?.alpha_anomaly_score || 0}">${result.alpha_anomalies?.alpha_anomaly_score?.toFixed(2) || '-'}</td>
+                    <td data-value="${result.rgb_anomalies?.ssim_score || 0}">${result.rgb_anomalies?.ssim_score?.toFixed(4) || '-'}</td>
+                    <td data-value="${result.rgb_anomalies?.psnr || 0}">${result.rgb_anomalies?.psnr?.toFixed(2) || '-'}</td>
+                    <td data-value="${result.rgb_anomalies?.channel_ratio_severity || ''}">${result.rgb_anomalies?.channel_ratio_severity || '-'}</td>
+                    <td data-value="${result.rgb_anomalies?.rgb_anomaly_score || 0}">${result.rgb_anomalies?.rgb_anomaly_score?.toFixed(2) || '-'}</td>
+                    <td data-value="${result.overall?.overall_score || 0}">${result.overall?.overall_score?.toFixed(2) || '-'}</td>
+                    <td class="severity-${result.overall?.severity || 'none'}" data-value="${result.overall?.overall_score || 0}">${getSeveritySymbol(result.overall?.severity || 'none')}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        function filterBySeverity(severity) {
+            currentFilter = severity;
+            applyFilters();
+        }
+        
+        function applyFilters() {
+            if (!window.reportData) return;
+            
+            const programFilter = document.getElementById('programFilter').value;
+            const inputFilter = document.getElementById('inputFilter').value;
+            
+            let filteredResults = window.reportData.results.filter(result => {
+                if (currentFilter === 'output' && !result.has_output) {
+                    return false;
+                }
+                if (currentFilter === 'empty' && result.has_output) {
+                    return false;
+                }
+                if (currentFilter !== 'all' && currentFilter !== 'output' && currentFilter !== 'empty' && result.overall?.severity !== currentFilter) {
+                    return false;
+                }
+                if (programFilter !== 'all' && result.program !== programFilter) {
+                    return false;
+                }
+                if (inputFilter !== 'all' && result.input_filename !== inputFilter) {
+                    return false;
+                }
+                return true;
+            });
+            
+            renderTable(filteredResults);
+        }
+        
+        function resetFilters() {
+            currentFilter = 'all';
+            document.getElementById('programFilter').value = 'all';
+            document.getElementById('inputFilter').value = 'all';
+            renderTable(window.reportData.results);
+        }
+        
+        function getSeveritySymbol(severity) {
+            switch(severity) {
+                case 'normal':
+                    return '*'; // 低风险
+                case 'mild':
+                    return '+'; // 轻微异常
+                case 'moderate':
+                    return '++'; // 中度异常
+                case 'severe':
+                    return '+++'; // 严重异常
+                case 'none':
+                    return '-'; // 无输出
+                default:
+                    return '-';
+            }
+        }
+        
+        function showImageFromRow(cell) {
+            const row = cell.parentElement;
+            const outputFilename = row.children[1].textContent;
+            if (outputFilename && outputFilename !== '-') {
+                const imagePath = `../output/${outputFilename}`;
+                showImage(imagePath);
+            }
+        }
+        
+        function sortTable(columnIndex) {
+            if (currentSortColumn === columnIndex) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = columnIndex;
+                sortDirection = 'asc';
+            }
+            
+            const headers = document.querySelectorAll('th');
+            headers.forEach((header, index) => {
+                header.classList.remove('sort-asc', 'sort-desc');
+                if (index === columnIndex) {
+                    header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+            
+            const tbody = document.getElementById('tableBody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            rows.sort((a, b) => {
+                const aValue = a.children[columnIndex].dataset.value;
+                const bValue = b.children[columnIndex].dataset.value;
+                
+                // 数值类型的列，使用数值比较
+                const numericColumns = [0, 8, 9, 10, 11, 13, 14, 15]; // 序号、透明度比例、Alpha异常分、SSIM、PSNR、RGB异常分、综合得分、严重程度
+                
+                if (numericColumns.includes(columnIndex)) {
+                    const aNum = parseFloat(aValue) || 0;
+                    const bNum = parseFloat(bValue) || 0;
+                    if (sortDirection === 'asc') {
+                        return aNum - bNum;
+                    } else {
+                        return bNum - aNum;
+                    }
+                } else {
+                    // 字符串类型的列，使用字符串比较
+                    if (sortDirection === 'asc') {
+                        return aValue > bValue ? 1 : -1;
+                    } else {
+                        return aValue < bValue ? 1 : -1;
+                    }
+                }
+            });
+            
+            rows.forEach(row => tbody.appendChild(row));
+        }
+        
+        function showImage(imagePath) {
+            const modal = document.getElementById('imageModal');
+            const img = document.getElementById('modalImage');
+            const title = document.getElementById('modalTitle');
+            
+            img.src = imagePath;
+            title.textContent = imagePath.split('/').pop();
+            modal.style.display = 'block';
+            currentZoom = 1;
+            updateZoom();
+            updateZoomSlider();
+            
+            changeBackground('gray');
+            document.getElementById('magnifierToggle').checked = true;
+            magnifierEnabled = true;
+            
+            imageOffsetX = 0;
+            imageOffsetY = 0;
+            img.style.transform = 'translate(0px, 0px)';
+        }
+        
+        function closeModal() {
+            document.getElementById('imageModal').style.display = 'none';
+            document.getElementById('magnifierToggle').checked = false;
+            magnifierEnabled = false;
+            document.getElementById('magnifier').style.display = 'none';
+            
+            handToolEnabled = false;
+            const btn = document.getElementById('handBtn');
+            if (btn) {
+                btn.classList.remove('active');
+                btn.classList.remove('grabbing');
+            }
+            
+            const img = document.getElementById('modalImage');
+            img.style.cursor = 'default';
+            img.style.transform = 'translate(0px, 0px)';
+            imageOffsetX = 0;
+            imageOffsetY = 0;
+        }
+        
+        function toggleMagnifier() {
+            magnifierEnabled = !magnifierEnabled;
+            const magnifier = document.getElementById('magnifier');
+            magnifier.style.display = magnifierEnabled ? 'block' : 'none';
+        }
+        
+        function toggleHandTool() {
+            handToolEnabled = !handToolEnabled;
+            const btn = document.getElementById('handBtn');
+            const img = document.getElementById('modalImage');
+            
+            if (handToolEnabled) {
+                btn.classList.add('active');
+                btn.classList.add('grabbing');
+                img.style.cursor = 'grab';
+            } else {
+                btn.classList.remove('active');
+                btn.classList.remove('grabbing');
+                img.style.cursor = 'default';
+            }
+        }
+        
+        function zoomIn() {
+            currentZoom = Math.min(currentZoom * 1.2, 5);
+            updateZoom();
+            updateZoomSlider();
+        }
+        
+        function zoomOut() {
+            currentZoom = Math.max(currentZoom / 1.2, 0.2);
+            updateZoom();
+            updateZoomSlider();
+        }
+        
+        function resetZoom() {
+            currentZoom = 1;
+            imageOffsetX = 0;
+            imageOffsetY = 0;
+            updateZoom();
+            updateZoomSlider();
+        }
+        
+        function updateZoom() {
+            const img = document.getElementById('modalImage');
+            img.style.transform = `scale(${currentZoom}) translate(${imageOffsetX}px, ${imageOffsetY}px)`;
+            img.style.transformOrigin = 'center center';
+        }
+        
+        function updateZoomSlider() {
+            const slider = document.getElementById('zoomSlider');
+            slider.value = currentZoom * 100;
+            document.getElementById('zoomValue').textContent = Math.round(currentZoom * 100) + '%';
+        }
+        
+        function updateZoomFromSlider() {
+            const slider = document.getElementById('zoomSlider');
+            currentZoom = slider.value / 100;
+            updateZoom();
+            document.getElementById('zoomValue').textContent = slider.value + '%';
+        }
+        
+        function changeBackground(color) {
+            currentBackground = color;
+            const modalBody = document.getElementById('modalBody');
+            const buttons = document.querySelectorAll('.background-selector button');
+            
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if (color === 'gray') {
+                modalBody.style.background = '#1a1a1a';
+                modalBody.style.backgroundImage = 'none';
+            } else if (color === 'black') {
+                modalBody.style.background = '#000000';
+                modalBody.style.backgroundImage = 'none';
+            } else if (color === 'white') {
+                modalBody.style.background = '#ffffff';
+                modalBody.style.backgroundImage = 'none';
+            } else if (color === 'checkerboard') {
+                modalBody.style.background = '#1a1a1a';
+                modalBody.style.backgroundImage = `
+                    linear-gradient(45deg, #222 25%, transparent 25%),
+                    linear-gradient(-45deg, #222 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #222 75%),
+                    linear-gradient(-45deg, transparent 75%, #222 75%)
+                `;
+                modalBody.style.backgroundSize = '20px 20px';
+                modalBody.style.backgroundPosition = '0 0, 0 10px, 10px -10px, -10px 0px';
+            }
+        }
+        
+        function exportToCSV() {
+            if (!window.reportData) return;
+            
+            let csv = '序号,输出文件名,输入文件名,程序,测试参数,输出尺寸,输入尺寸,透明度异常,透明度比例,Alpha异常分,SSIM,PSNR,通道比例,RGB异常分,综合得分,严重程度\n';
+            
+            window.reportData.results.forEach((result, index) => {
+                csv += `${index + 1},${result.output_filename || ''},${result.input_filename || ''},${result.program || ''},${result.params || ''},${result.output_size ? result.output_size[0] + 'x' + result.output_size[1] : ''},${result.input_size ? result.input_size[0] + 'x' + result.input_size[1] : ''},${result.alpha_anomalies?.sudden_transparency_severity || ''},${result.alpha_anomalies?.sudden_transparency_ratio?.toFixed(4) || ''},${result.alpha_anomalies?.alpha_anomaly_score?.toFixed(2) || ''},${result.rgb_anomalies?.ssim_score?.toFixed(4) || ''},${result.rgb_anomalies?.psnr?.toFixed(2) || ''},${result.rgb_anomalies?.channel_ratio_severity || ''},${result.rgb_anomalies?.rgb_anomaly_score?.toFixed(2) || ''},${result.overall?.overall_score?.toFixed(2) || ''},${getSeveritySymbol(result.overall?.severity || 'none')}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'report_export.csv';
+            link.click();
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const modalBody = document.getElementById('modalBody');
+            const magnifier = document.getElementById('magnifier');
+            const img = document.getElementById('modalImage');
+            
+            modalBody.addEventListener('mousemove', function(e) {
+                if (!magnifierEnabled) return;
+                
+                const rect = img.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+                    magnifier.style.display = 'none';
+                    return;
+                }
+                
+                magnifier.style.display = 'block';
+                magnifier.style.left = (e.clientX - 100) + 'px';
+                magnifier.style.top = (e.clientY - 100) + 'px';
+                
+                const magnifierSize = 200;
+                const zoomLevel = magnifierZoom;
+                
+                magnifier.style.backgroundImage = `url(${img.src})`;
+                magnifier.style.backgroundSize = `${rect.width * zoomLevel}px ${rect.height * zoomLevel}px`;
+                magnifier.style.backgroundPosition = `-${x * zoomLevel - magnifierSize / 2}px -${y * zoomLevel - magnifierSize / 2}px`;
+            });
+            
+            modalBody.addEventListener('mouseleave', function() {
+                magnifier.style.display = 'none';
+            });
+            
+            img.addEventListener('mousedown', function(e) {
+                if (!handToolEnabled) return;
+                isDragging = true;
+                dragStartX = e.clientX - imageOffsetX;
+                dragStartY = e.clientY - imageOffsetY;
+                img.style.cursor = 'grabbing';
+            });
+            
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging || !handToolEnabled) return;
+                e.preventDefault();
+                const newX = e.clientX - dragStartX;
+                const newY = e.clientY - dragStartY;
+                imageOffsetX = newX;
+                imageOffsetY = newY;
+                img.style.transform = `translate(${newX}px, ${newY}px)`;
+            });
+            
+            document.addEventListener('mouseup', function() {
+                isDragging = false;
+                if (handToolEnabled) {
+                    img.style.cursor = 'grab';
+                }
+            });
+            
+            document.addEventListener('mouseleave', function(e) {
+                if (e.target === img && isDragging) {
+                    isDragging = false;
+                    if (handToolEnabled) {
+                        img.style.cursor = 'grab';
+                    }
+                }
+            });
+            
+            loadReportData();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图像一致性评估报告</title>
+    
+    <!-- 1. 引入官方 js-image-zoom 库 -->
+    <script src="https://unpkg.com/js-image-zoom@0.7.0/js-image-zoom.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .summary {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .label {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stat-card.normal .number { color: #28a745; }
+        .stat-card.mild .number { color: #ffc107; }
+        .stat-card.moderate .number { color: #fd7e14; }
+        .stat-card.severe .number { color: #dc3545; }
+        .stat-card .number.total { color: #333; }
+        .stat-card .number.empty { color: #6c757d; }
+        
+        .filter-controls {
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-controls select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .filter-controls button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .filter-controls button:hover {
+            background: #5568d3;
+        }
+        
+        .table-container {
+            padding: 30px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        thead { background: #f8f9fa; }
+        
+        th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        
+        th:hover { background: #e9ecef; }
+        
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        tbody tr:hover { background: #f8f9fa; }
+        
+        /* 严重程度颜色 */
+        tbody tr.severity-normal { background: #d4edda; }
+        tbody tr.severity-mild { background: #fff3cd; }
+        tbody tr.severity-moderate { background: #ffe8d1; }
+        tbody tr.severity-severe { background: #f8d7da; }
+        tbody tr.severity-none { background: #e2e3e5; }
+        
+        .severity-normal { color: #155724; font-weight: bold; }
+        .severity-mild { color: #856404; font-weight: bold; }
+        .severity-moderate { color: #c85a00; font-weight: bold; }
+        .severity-severe { color: #721c24; font-weight: bold; }
+        .severity-none { color: #6c757d; font-weight: bold; }
+        
+        /* Modal 样式优化 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        .modal-content {
+            position: relative;
+            margin: auto;
+            padding: 20px;
+            width: 95%;
+            height: 95%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .modal-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .modal-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .modal-body {
+            flex: 1;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            overflow: hidden; /* 防止放大镜溢出 */
+            position: relative;
+        }
+        
+        /* 2. 关键修改：图片容器必须自适应内容，以便库正确计算位置 */
+        #img-container {
+            display: inline-block; /* 改为 inline-block 让容器包裹图片 */
+            max-width: 100%;
+            max-height: 100%;
+            /* 移除固定的 width/height */
+            position: relative; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        #modalImage {
+            max-width: 100%;
+            max-height: 80vh; /* 限制图片高度，防止撑破屏幕 */
+            display: block;
+        }
+
+        .background-selector button {
+            padding: 6px 12px;
+            background: #555;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .background-selector button.active {
+            background: #667eea;
+        }
+        
+        .hidden { display: none !important; }
+        
+        .file-selector {
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .file-selector label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #ffc107;
+            color: #333;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>图像一致性评估报告</h1>
+            <p id="reportInfo">加载中...</p>
+            <p id="csvFileInfo" style="margin-top: 5px; font-size: 12px;">-</p>
+        </div>
+        
+        <div class="summary">
+            <div class="file-selector" id="fileSelector">
+                <h3>自动加载JS数据中...</h3>
+                <input type="file" id="dataFileInput" accept=".json,.js" onchange="loadDataFromFile(event)">
+                <label for="dataFileInput">手动选择JSON或JS文件</label>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card" onclick="filterBySeverity('all')"><div class="number total" id="totalCount">0</div><div class="label">全部测试</div></div>
+                <div class="stat-card" onclick="filterBySeverity('empty')"><div class="number empty" id="emptyCount">0</div><div class="label">未输出</div></div>
+                <div class="stat-card" onclick="filterBySeverity('output')"><div class="number" id="outputCount">0</div><div class="label">输出</div></div>
+                <div class="stat-card normal" onclick="filterBySeverity('normal')"><div class="number" id="normalCount">0</div><div class="label">正常</div></div>
+                <div class="stat-card mild" onclick="filterBySeverity('mild')"><div class="number" id="mildCount">0</div><div class="label">轻微异常</div></div>
+                <div class="stat-card moderate" onclick="filterBySeverity('moderate')"><div class="number" id="moderateCount">0</div><div class="label">中度异常</div></div>
+                <div class="stat-card severe" onclick="filterBySeverity('severe')"><div class="number" id="severeCount">0</div><div class="label">严重异常</div></div>
+            </div>
+            
+            <div class="filter-controls">
+                <select id="programFilter" onchange="applyFilters()"><option value="all">所有程序</option></select>
+                <select id="inputFilter" onchange="applyFilters()"><option value="all">所有输入文件</option></select>
+                <button onclick="resetFilters()">重置筛选</button>
+                <button onclick="exportToCSV()">导出CSV</button>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">序号</th>
+                        <th onclick="sortTable(1)">输出文件名</th>
+                        <th onclick="sortTable(2)">输入文件名</th>
+                        <th onclick="sortTable(3)">程序</th>
+                        <th onclick="sortTable(4)">测试参数</th>
+                        <th onclick="sortTable(5)">输出尺寸</th>
+                        <th onclick="sortTable(6)">输入尺寸</th>
+                        <th onclick="sortTable(7)">透明度异常</th>
+                        <th onclick="sortTable(8)">透明度比例</th>
+                        <th onclick="sortTable(9)">Alpha异常分</th>
+                        <th onclick="sortTable(10)">SSIM</th>
+                        <th onclick="sortTable(11)">PSNR</th>
+                        <th onclick="sortTable(14)">综合得分</th>
+                        <th onclick="sortTable(15)">严重程度</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Modal 弹窗 -->
+    <div id="imageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle" style="font-size: 16px; margin-right: 20px; overflow:hidden; text-overflow:ellipsis;">图像查看</h2>
+                <div class="modal-controls">
+                    <div style="display: flex; align-items: center; gap: 5px; color: white;">
+                        <label for="zoomToggle">放大镜:</label>
+                        <input type="checkbox" id="zoomToggle" checked onchange="toggleZoom(this)">
+                    </div>
+                    <div class="background-selector">
+                        <button onclick="changeBackground('gray')" class="active">灰色</button>
+                        <button onclick="changeBackground('black')">黑色</button>
+                        <button onclick="changeBackground('white')">白色</button>
+                        <button onclick="changeBackground('checkerboard')">棋盘格</button>
+                    </div>
+                    <button onclick="closeModal()" style="margin-left:10px; padding: 5px 10px; cursor:pointer;">×</button>
+                </div>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- 图片容器，js-image-zoom 必须作用于此 -->
+                <div id="img-container">
+                    <img id="modalImage" src="" alt="Image">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script data-js-path="">
+        let reportData = null;
+        let currentFilter = 'all';
+        let currentSortColumn = -1;
+        let sortDirection = 'asc';
+        let currentBackground = 'gray';
+        let imageZoomEnabled = true;
+        let imageZoomInstance = null; // 存储放大镜实例
+        
+        // 简化的加载逻辑
+        function loadReportData() {
+            const script = document.createElement('script');
+            // 尝试加载同名js文件
+            const jsPath = window.location.pathname.replace('.html', '.js');
+            const fileName = jsPath.split('/').pop();
+            script.src = fileName;
+            
+            script.onload = function() {
+                if (typeof window.reportData !== 'undefined') {
+                    document.getElementById('fileSelector').classList.add('hidden');
+                    renderReport();
+                }
+            };
+            script.onerror = function() {
+                document.getElementById('reportInfo').textContent = '未找到同名JS数据文件，请手动选择';
+            };
+            document.head.appendChild(script);
+        }
+
+        function loadDataFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    if (file.name.endsWith('.json')) window.reportData = JSON.parse(e.target.result);
+                    else eval(e.target.result);
+                    
+                    if (window.reportData) {
+                        document.getElementById('fileSelector').classList.add('hidden');
+                        renderReport();
+                    }
+                } catch(err) { alert('加载失败: ' + err.message); }
+            };
+            reader.readAsText(file);
+        }
+
+        // 渲染逻辑与原版保持一致，省略部分重复代码...
+        function renderReport() {
+            if (!window.reportData) return;
+            const meta = window.reportData.metadata;
+            document.getElementById('reportInfo').textContent = `生成时间: ${meta.timestamp} | 文件数: ${meta.total_files}`;
+            
+            // 更新统计卡片
+            const counts = window.reportData.severity_counts;
+            document.getElementById('normalCount').textContent = counts.normal;
+            document.getElementById('mildCount').textContent = counts.mild;
+            document.getElementById('moderateCount').textContent = counts.moderate;
+            document.getElementById('severeCount').textContent = counts.severe;
+            document.getElementById('totalCount').textContent = window.reportData.results.length;
+            
+            populateFilters(window.reportData.results);
+            renderTable(window.reportData.results);
+        }
+        
+        function populateFilters(results) {
+            // 简单去重
+            const programs = [...new Set(results.map(r => r.program).filter(Boolean))];
+            const inputs = [...new Set(results.map(r => r.input_filename).filter(Boolean))];
+            
+            const pSelect = document.getElementById('programFilter');
+            programs.forEach(p => pSelect.add(new Option(p, p)));
+            
+            const iSelect = document.getElementById('inputFilter');
+            inputs.forEach(i => iSelect.add(new Option(i, i)));
+        }
+
+        function renderTable(results) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            results.forEach((r, i) => {
+                const tr = document.createElement('tr');
+                tr.className = `severity-${r.overall.severity}`;
+                // 构建表格行
+                tr.innerHTML = `
+                    <td onclick="showImageFromRow(this)" style="cursor: pointer; font-weight: bold; text-decoration: underline;">${i + 1}</td>
+                    <td>${r.output_filename || '-'}</td>
+                    <td>${r.input_filename || '-'}</td>
+                    <td>${r.program || '-'}</td>
+                    <td>${r.params || '-'}</td>
+                    <td>${r.output_size ? r.output_size.join('x') : '-'}</td>
+                    <td>${r.input_size ? r.input_size.join('x') : '-'}</td>
+                    <td>${r.alpha_anomalies?.sudden_transparency_severity || '-'}</td>
+                    <td>${formatNum(r.alpha_anomalies?.sudden_transparency_ratio)}</td>
+                    <td>${formatNum(r.alpha_anomalies?.alpha_anomaly_score)}</td>
+                    <td>${formatNum(r.rgb_anomalies?.ssim_score)}</td>
+                    <td>${formatNum(r.rgb_anomalies?.psnr)}</td>
+                    <td>${formatNum(r.overall?.overall_score)}</td>
+                    <td class="severity-${r.overall?.severity}">${getSeveritySymbol(r.overall?.severity)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        function formatNum(n) { return (n !== undefined && n !== null) ? n.toFixed(4) : '-'; }
+        
+        function getSeveritySymbol(s) {
+            const map = { normal: '*', mild: '+', moderate: '++', severe: '+++', none: '-' };
+            return map[s] || '-';
+        }
+
+        // --- 核心图像处理与 js-image-zoom 集成 ---
+        
+        function showImageFromRow(cell) {
+            const row = cell.parentElement;
+            const outputFilename = row.cells[1].textContent;
+            if (outputFilename && outputFilename !== '-') {
+                // 假设图片在 output 目录下
+                showImage(`../output/${outputFilename}`);
+            }
+        }
+
+        function showImage(path) {
+            const modal = document.getElementById('imageModal');
+            const img = document.getElementById('modalImage');
+            const title = document.getElementById('modalTitle');
+            const container = document.getElementById('img-container');
+            
+            // 1. 重置状态
+            title.textContent = path.split('/').pop();
+            img.src = path;
+            modal.style.display = 'flex'; // 使用 flex 居中
+            
+            // 清理旧的放大镜 DOM (js-image-zoom 会在容器内插入 div)
+            killZoom();
+
+            // 2. 图片加载完毕后再初始化放大镜
+            img.onload = function() {
+                // 必须重新设置容器尺寸，或者让容器自动适应图片
+                // 因为我们在CSS里把container设为inline-block，它会自动适应img大小
+                if (imageZoomEnabled) {
+                    initZoom();
+                }
+            };
+        }
+
+        function initZoom() {
+            const container = document.getElementById('img-container');
+            const img = document.getElementById('modalImage');
+            
+            // 确保没有残留的放大镜元素
+            killZoom();
+            
+            // 3. 配置 js-image-zoom
+            // 只有当图片有实际宽度时才初始化
+            if (img.width > 50) {
+                const options = {
+                    width: img.width,    // 告诉库源图片的渲染宽度
+                    height: img.height,  // 告诉库源图片的渲染高度
+                    zoomWidth: 400,      // 放大窗口宽度
+                    offset: { vertical: 0, horizontal: 10 },
+                    scale: 2.5,          // 放大倍率
+                    zoomPosition: 'right' // 放在右侧
+                    // zoomStyle: 'z-index: 2000; border: 1px solid #ccc;' 
+                };
+                
+                // 实例化
+                try {
+                    imageZoomInstance = new ImageZoom(container, options);
+                } catch(e) {
+                    console.error("Zoom init failed:", e);
+                }
+            }
+        }
+
+        function killZoom() {
+            if (imageZoomInstance) {
+                imageZoomInstance.kill(); // 如果库版本支持 kill
+                imageZoomInstance = null;
+            }
+            // 手动清理 DOM 以防万一 (移除除 img 以外的所有子元素)
+            const container = document.getElementById('img-container');
+            const children = Array.from(container.children);
+            children.forEach(child => {
+                if (child.tagName !== 'IMG') {
+                    child.remove();
+                }
+            });
+        }
+
+        function toggleZoom(checkbox) {
+            imageZoomEnabled = checkbox.checked;
+            if (imageZoomEnabled) {
+                initZoom();
+            } else {
+                killZoom();
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').style.display = 'none';
+            killZoom(); // 关闭时销毁放大镜
+        }
+
+        // 背景切换逻辑
+        function changeBackground(color) {
+            const body = document.getElementById('modalBody');
+            const container = document.getElementById('img-container');
+            const btns = document.querySelectorAll('.background-selector button');
+            btns.forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            let bg = '#1a1a1a';
+            if (color === 'white') bg = '#ffffff';
+            if (color === 'black') bg = '#000000';
+            
+            body.style.background = bg;
+            if (color === 'checkerboard') {
+                body.style.backgroundImage = `linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)`;
+                body.style.backgroundSize = '20px 20px';
+                body.style.backgroundPosition = '0 0, 0 10px, 10px -10px, -10px 0px';
+            } else {
+                body.style.backgroundImage = 'none';
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', loadReportData);
+        
+        // 筛选和排序辅助函数 (保持原逻辑框架)
+        function filterBySeverity(sev) {
+            currentFilter = sev;
+            applyFilters();
+        }
+        function applyFilters() {
+            if(!window.reportData) return;
+            const pFilter = document.getElementById('programFilter').value;
+            const iFilter = document.getElementById('inputFilter').value;
+            
+            const filtered = window.reportData.results.filter(r => {
+                if(currentFilter !== 'all') {
+                    if(currentFilter === 'output' && !r.has_output) return false;
+                    if(currentFilter === 'empty' && r.has_output) return false;
+                    if(['normal','mild','moderate','severe'].includes(currentFilter) && r.overall.severity !== currentFilter) return false;
+                }
+                if(pFilter !== 'all' && r.program !== pFilter) return false;
+                if(iFilter !== 'all' && r.input_filename !== iFilter) return false;
+                return true;
+            });
+            renderTable(filtered);
+        }
+        function resetFilters() {
+            currentFilter = 'all';
+            document.getElementById('programFilter').value = 'all';
+            document.getElementById('inputFilter').value = 'all';
+            applyFilters();
+        }
+        function sortTable(n) {
+            // 简单的排序实现
+            const table = document.getElementById("resultsTable");
+            let rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table.querySelectorAll('th').forEach(th => th.innerHTML = th.innerText.replace(/[▼▲]/g, ''));
+            
+            switching = true;
+            dir = "asc"; 
+            while (switching) {
+                switching = false;
+                rows = table.rows;
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[n];
+                    y = rows[i + 1].getElementsByTagName("TD")[n];
+                    
+                    let xVal = x.textContent || x.innerText;
+                    let yVal = y.textContent || y.innerText;
+                    
+                    if (!isNaN(parseFloat(xVal)) && !isNaN(parseFloat(yVal))) {
+                        xVal = parseFloat(xVal);
+                        yVal = parseFloat(yVal);
+                    }
+                    
+                    if (dir == "asc") {
+                        if (xVal > yVal) { shouldSwitch = true; break; }
+                    } else if (dir == "desc") {
+                        if (xVal < yVal) { shouldSwitch = true; break; }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount ++; 
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+            const th = table.querySelectorAll('th')[n];
+            th.innerHTML += (dir === 'asc' ? ' ▲' : ' ▼');
+        }
+        function exportToCSV() {
+            if(!window.reportData) return;
+            let csv = "序号,输出文件名,输入文件名,严重程度,综合得分\n";
+            window.reportData.results.forEach((r,i) => {
+                csv += `${i+1},${r.output_filename},${r.input_filename},${r.overall.severity},${r.overall.overall_score}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "report.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
