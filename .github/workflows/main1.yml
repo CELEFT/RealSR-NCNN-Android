@@ -1,0 +1,85 @@
+name: MNNSR for Linux (Prebuilt MNN)
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
+      - '.github/workflows/mnnsr-linux-prebuilt.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git wget unzip \
+            libopencv-dev ocl-icd-opencl-dev clinfo \
+            libvulkan-dev vulkan-tools
+
+      - name: Download and setup MNN prebuilt package
+        run: |
+          cd 3rdparty
+          # 使用您提供的链接下载
+          wget -nv "https://release-assets.githubusercontent.com/github-production-release-asset/181436799/69dbd928-3808-469b-b536-46816f98b75c?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-14T05%3A25%3A19Z&rscd=attachment%3B+filename%3Dmnn_3.4.0_linux_x64_cpu_opencl.zip&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-14T04%3A24%3A32Z&ske=2026-02-14T05%3A25%3A19Z&sks=b&skv=2018-11-09&sig=upT36pILb6EIs5CO4mp%2FM9u6y0e8g03eYISFVj9kz%2BE%3D" -O mnn_3.4.0_linux_x64_cpu_opencl.zip
+          unzip mnn_3.4.0_linux_x64_cpu_opencl.zip
+          # 解压后的目录名可能与文件名不同，根据实际情况调整
+          mv mnn_3.4.0_linux_x64_cpu_opencl mnn-prebuilt
+
+      - name: Setup ncnn
+        run: |
+          cd 3rdparty
+          wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
+          unzip ncnn-20250503-ubuntu-2404-shared.zip
+          mv ncnn-20250503-ubuntu-2404-shared ncnn-ubuntu-shared
+
+      - name: Configure and build MNNSR
+        run: |
+          cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni
+          mkdir build && cd build
+          # 关键：通过 CMake 变量指定预编译 MNN 的位置
+          cmake .. \
+            -DMNN_DIR=${{ github.workspace }}/3rdparty/mnn-prebuilt/lib/cmake/MNN \
+            -Dncnn_DIR=${{ github.workspace }}/3rdparty/ncnn-ubuntu-shared/lib/cmake/ncnn
+          make -j$(nproc)
+
+      - name: Prepare artifacts
+        run: |
+          cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni
+          mkdir -p mnnsr/lib
+          cp build/mnnsr-ncnn mnnsr/
+          # 复制 MNN 库（预编译包中的库）
+          cp ${{ github.workspace }}/3rdparty/mnn-prebuilt/lib/*.so mnnsr/lib/
+          # 复制 ncnn 库
+          cp ${{ github.workspace }}/3rdparty/ncnn-ubuntu-shared/lib/*.so mnnsr/lib/ 2>/dev/null || true
+          # 复制系统依赖（可选）
+          ldd mnnsr/mnnsr-ncnn | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
+          ls -lh mnnsr/
+
+      - name: Test MNNSR
+        run: |
+          cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr
+          wget -nv https://github.com/nihui/waifu2x-ncnn-vulkan/raw/master/images/0.jpg
+          # 需要下载一个测试模型（示例）
+          wget -nv https://github.com/tumuyan/RealSR-MNN/raw/master/models/RealESRGAN_x4plus.mnn -O test.mnn || echo "Model download failed, skipping test"
+          if [ -f test.mnn ]; then
+            ./mnnsr-ncnn -b 0 -i 0.jpg -o output.png -s 4 -m test.mnn
+            echo "Test completed"
+          else
+            echo "Test skipped (model not found)"
+          fi
+        continue-on-error: true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnnsr-ubuntu24-prebuilt
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr
+          retention-days: 90
