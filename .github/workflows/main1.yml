@@ -24,16 +24,17 @@ jobs:
             libopencv-dev ocl-icd-opencl-dev clinfo \
             libvulkan-dev vulkan-tools
 
-      - name: Download and setup MNN prebuilt package
+      - name: Create 3rdparty directory
+        run: mkdir -p 3rdparty
+
+      - name: Download and setup MNN prebuilt package (CPU + OpenCL)
         run: |
           cd 3rdparty
-          # 使用您提供的链接下载
-          wget -nv "https://release-assets.githubusercontent.com/github-production-release-asset/181436799/69dbd928-3808-469b-b536-46816f98b75c?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-14T05%3A25%3A19Z&rscd=attachment%3B+filename%3Dmnn_3.4.0_linux_x64_cpu_opencl.zip&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-14T04%3A24%3A32Z&ske=2026-02-14T05%3A25%3A19Z&sks=b&skv=2018-11-09&sig=upT36pILb6EIs5CO4mp%2FM9u6y0e8g03eYISFVj9kz%2BE%3D" -O mnn_3.4.0_linux_x64_cpu_opencl.zip
+          wget -nv https://github.com/alibaba/MNN/releases/download/3.4.0/mnn_3.4.0_linux_x64_cpu_opencl.zip
           unzip mnn_3.4.0_linux_x64_cpu_opencl.zip
-          # 解压后的目录名可能与文件名不同，根据实际情况调整
           mv mnn_3.4.0_linux_x64_cpu_opencl mnn-prebuilt
 
-      - name: Setup ncnn
+      - name: Download and setup ncnn prebuilt package
         run: |
           cd 3rdparty
           wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
@@ -43,41 +44,52 @@ jobs:
       - name: Configure and build MNNSR
         run: |
           cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni
-          mkdir build && cd build
-          # 关键：通过 CMake 变量指定预编译 MNN 的位置
+          mkdir -p build && cd build
           cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
             -DMNN_DIR=${{ github.workspace }}/3rdparty/mnn-prebuilt/lib/cmake/MNN \
             -Dncnn_DIR=${{ github.workspace }}/3rdparty/ncnn-ubuntu-shared/lib/cmake/ncnn
           make -j$(nproc)
 
-      - name: Prepare artifacts
+      - name: Prepare artifacts (executable + libraries)
         run: |
           cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni
           mkdir -p mnnsr/lib
+          # 复制可执行文件
           cp build/mnnsr-ncnn mnnsr/
-          # 复制 MNN 库（预编译包中的库）
-          cp ${{ github.workspace }}/3rdparty/mnn-prebuilt/lib/*.so mnnsr/lib/
+          # 复制 MNN 库
+          cp ${{ github.workspace }}/3rdparty/mnn-prebuilt/lib/*.so mnnsr/lib/ 2>/dev/null || true
           # 复制 ncnn 库
           cp ${{ github.workspace }}/3rdparty/ncnn-ubuntu-shared/lib/*.so mnnsr/lib/ 2>/dev/null || true
-          # 复制系统依赖（可选）
+          # 复制其他系统库（可选）
           ldd mnnsr/mnnsr-ncnn | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
+          # 创建运行脚本
+          cat > mnnsr/run.sh << 'EOF'
+#!/bin/bash
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="$DIR/lib:$LD_LIBRARY_PATH"
+exec "$DIR/mnnsr-ncnn" "$@"
+EOF
+          chmod +x mnnsr/run.sh
           ls -lh mnnsr/
 
-      - name: Test MNNSR
+      - name: Test MNNSR (if model available)
+        continue-on-error: true
         run: |
           cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr
+          # 下载测试图片
           wget -nv https://github.com/nihui/waifu2x-ncnn-vulkan/raw/master/images/0.jpg
-          # 需要下载一个测试模型（示例）
-          wget -nv https://github.com/tumuyan/RealSR-MNN/raw/master/models/RealESRGAN_x4plus.mnn -O test.mnn || echo "Model download failed, skipping test"
+          # 下载示例模型（使用 tumuyan 的 RealESRGAN）
+          wget -nv https://github.com/tumuyan/RealSR-MNN/raw/master/models/RealESRGAN_x4plus.mnn -O test.mnn || echo "Model download failed"
           if [ -f test.mnn ]; then
+            export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
             ./mnnsr-ncnn -b 0 -i 0.jpg -o output.png -s 4 -m test.mnn
-            echo "Test completed"
+            echo "Test completed, output.png generated"
           else
             echo "Test skipped (model not found)"
           fi
-        continue-on-error: true
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mnnsr-ubuntu24-prebuilt
