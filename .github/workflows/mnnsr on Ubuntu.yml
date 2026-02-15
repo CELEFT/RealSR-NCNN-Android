@@ -27,7 +27,10 @@ jobs:
       - name: Clone 3rdparty
         run: |
           git clone https://github.com/webmproject/libwebp --depth 1
-          git clone https://github.com/alibaba/MNN --depth 1
+          wget -nv https://tmp-j2.vx-cdn.com/file-6991cf381d46c-6991cf7f86fc6/MNN-3.4-static.tar.xz
+          tar -xf MNN-3.4-static.tar.xz
+          # 假设解压后的目录名为 MNN-3.4-static，重命名为 MNN 以便后续步骤使用
+          mv MNN-3.4-static MNN
           wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
           unzip ncnn-20250503-ubuntu-2404-shared.zip
           mv ncnn-20250503-ubuntu-2404-shared ncnn-ubuntu-shared
