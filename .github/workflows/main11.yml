@@ -1,0 +1,207 @@
+name: MNNSR for Linux
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
+      - '.github/workflows/mnnsr-linux.yml'
+  workflow_dispatch:
+
+env:
+  ncnn_data_tag: "20250916"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 组
+          - image: nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+            sysname: ubuntu22
+            cuda: "12.8.1"
+            ncnn_ver: "2204"
+          - image: nvidia/cuda:12.6.3-cudnn-devel-ubuntu22.04
+            sysname: ubuntu22
+            cuda: "12.6.3"
+            ncnn_ver: "2404"
+          - image: nvidia/cuda:12.3.2-devel-ubuntu22.04
+            sysname: ubuntu22
+            cuda: "12.3.2"
+            ncnn_ver: "2204"
+
+          # Ubuntu 24.04 组
+          - image: nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
+            sysname: ubuntu24
+            cuda: "12.8.1"
+            ncnn_ver: "2404"
+          - image: nvidia/cuda:12.2.1-cudnn-devel-ubuntu24.04
+            sysname: ubuntu24
+            cuda: "12.2.1"
+            ncnn_ver: "2404"
+
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (Debian/Ubuntu)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates sudo git wget unzip cmake build-essential
+          update-ca-certificates
+          apt-get install -y --no-install-recommends libopencv-dev ocl-icd-opencl-dev clinfo libvulkan-dev vulkan-tools
+
+      - name: Clone 3rdparty & Download NCNN
+        run: |
+          git clone https://github.com/webmproject/libwebp  --depth 1
+          git clone https://github.com/alibaba/MNN --depth 1
+          
+          NCNN_FILENAME="ncnn-${{ env.ncnn_data_tag }}-ubuntu-${{ matrix.ncnn_ver }}-shared.zip"
+          NCNN_URL="https://github.com/Tencent/ncnn/releases/download/${{ env.ncnn_data_tag }}/$NCNN_FILENAME"
+          
+          echo "Downloading NCNN from: $NCNN_URL"
+          wget -nv $NCNN_URL
+          
+          unzip $NCNN_FILENAME
+          rm $NCNN_FILENAME
+          
+          # 去掉 .zip 后缀获取目录名
+          NCNN_DIR_NAME=${NCNN_FILENAME%.zip}
+          
+          echo "Renaming directory: $NCNN_DIR_NAME -> ncnn-ubuntu-vulkan-shared"
+          mv "$NCNN_DIR_NAME" ncnn-ubuntu-vulkan-shared
+          
+          ls -lh ncnn-ubuntu-vulkan-shared
+        working-directory: 3rdparty
+
+      - name: Modify CMakeLists.txt for RPATH
+        run: |
+          echo "Modifying CMakeLists.txt to add RPATH settings..."
+          sed -i.bak '/target_link_libraries(MNN PUBLIC -pthread dl)/a \
+            set_target_properties(MNN PROPERTIES\
+                BUILD_RPATH "$ORIGIN/lib"\
+            )
+          ' CMakeLists.txt
+        working-directory: 3rdparty/MNN
+
+      - name: Verify the System
+        run: |
+          gcc --version
+          # sudo whoami # 在某些 docker 容器中 sudo 可能不可用，视情况而定
+          echo cpu $(nproc)
+          pwd
+
+      - name: build mnn
+        id: mnn
+        run: |
+          mkdir build ;cd build; cmake ..  -DCMAKE_BUILD_TYPE=Release -DMNN_TENSORRT=OFF -DMNN_OPENGL=OFF  -DMNN_OPENCL=ON  -DMNN_VULKAN=ON  -DMNN_CUDA=ON  -DMNN_SEP_BUILD=OFF  && make -j$(nproc)
+          mkdir ../libs ; cp -v $(find . -name "libMNN*.so") ../libs/ ; ls -lh ../libs/
+        working-directory: 3rdparty/MNN
+
+      # 删除了旧的引用 steps.cuda 的步骤，改为仅在 MNN 失败时上传日志
+      - name: Upload MNN build logs on failure
+        if: failure() && steps.mnn.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnn-build-log-${{ matrix.sysname }}-${{ matrix.cuda }}
+          path: 3rdparty/MNN/build/Makefile
+          retention-days: 1
+
+      - name: build mnnsr
+        run: |
+          # 【关键修复】使用 $GITHUB_WORKSPACE 环境变量，确保在 Docker 容器内路径正确
+          MNN_LIB_PATH="$GITHUB_WORKSPACE/3rdparty/MNN/libs"
+          
+          echo "Checking path: $MNN_LIB_PATH"
+          ls -lh $MNN_LIB_PATH
+          
+          mkdir build ;cd build; cmake .. && make -j$(nproc)
+          
+          # 复制编译好的 MNN 库
+          cp $MNN_LIB_PATH/* ./  ; chmod 777 *;ls -lh
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Copy libs
+        continue-on-error: true
+        run: |
+          mkdir -p mnnsr/lib
+          cp build/*.so mnnsr/lib/ ;cp build/mnnsr-ncnn mnnsr/
+          
+          # 复制依赖库
+          ldd mnnsr/lib/libMNN.so | grep "=>" | awk '{print $3}' | xargs -I {} cp  -Ln {} mnnsr/lib/
+          ldd mnnsr/mnnsr-ncnn | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/
+          
+          cp ../../../../*.md mnnsr/
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni
+
+      - name: test mnnsr
+        run: |
+          wget -nv https://huggingface.co/tumuyan2/realsr-models/resolve/main/models-MNNSR/RealESRGAN-SourceBook-latest.mnn
+          cd mnnsr;wget https://github.com/nihui/waifu2x-ncnn-vulkan/raw/master/images/0.jpg;
+          ./mnnsr-ncnn -b 0 -i 0.jpg -o 0-x2-${{ matrix.sysname }}-cuda${{ matrix.cuda }}.png -s 2 -m ../RealESRGAN-SourceBook-latest.mnn
+          cd ../;cp -r mnnsr mnnsr-${{ matrix.sysname }}-cuda${{ matrix.cuda }}-opencl-vulkan-cpu
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnnsr-${{ matrix.sysname }}-cuda${{ matrix.cuda }}
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-${{ matrix.sysname }}-cuda${{ matrix.cuda }}-opencl-vulkan-cpu
+          retention-days: 90
+
+  package:
+    continue-on-error: true
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: mnnsr-artifacts
+          pattern: mnnsr-*
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: |
+          echo "Listing contents of the download directory:"
+          ls -R mnnsr-artifacts
+
+      - name: Copy test result
+        run: |
+          mkdir mnnsr-test-result
+          cp mnnsr-artifacts/*.png mnnsr-test-result/
+          tar -czvf mnnsr-test-result.tar.gz mnnsr-test-result
+
+      - name: Upload test result
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-mnnsr-test-result
+          path: mnnsr-test-result
+          retention-days: 90
+
+      - name: Download cuda & mnn artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: mnn-cuda
+          pattern:  |
+            nmm-cmake-*
+            mnn-build-log-*
+            cuda-*
+          merge-multiple: false
+
+      - name: Upload final package
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-mnn-cuda
+          path: mnn-cuda
+          retention-days: 90
+
+      - uses: ge
