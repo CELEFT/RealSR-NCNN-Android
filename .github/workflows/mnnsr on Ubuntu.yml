@@ -22,7 +22,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential unzip cmake git wget \
             libopencv-dev ocl-icd-opencl-dev clinfo \
-            libvulkan-dev vulkan-tools
+            libvulkan-dev vulkan-tools \
+            clang-15               # 添加 Clang 15
 
       - name: Clone 3rdparty
         run: |
@@ -55,8 +56,9 @@ jobs:
 
       - name: Verify system and CUDA
         run: |
-          gcc --version
+          gcc --version          # 系统 GCC 仍会存在，但构建将使用 Clang
           nvcc --version
+          clang-15 --version     # 确认 Clang 15 已安装
           echo "CPU cores: $(nproc)"
           pwd
 
@@ -66,6 +68,8 @@ jobs:
           rm -r build
           mkdir build && cd build
           cmake .. \
+            -DCMAKE_C_COMPILER=clang-15 \          # 指定 C 编译器为 Clang 15
+            -DCMAKE_CXX_COMPILER=clang++-15 \      # 指定 C++ 编译器为 Clang 15
             -DCMAKE_BUILD_TYPE=Release \
             -DMNN_TENSORRT=OFF \
             -DMNN_OPENGL=OFF \
@@ -94,7 +98,9 @@ jobs:
         run: |
           ls ../../../../../3rdparty/MNN/libs/
           mkdir build && cd build
-          cmake ..
+          cmake .. \
+            -DCMAKE_C_COMPILER=clang-15 \          # 同样使用 Clang 15
+            -DCMAKE_CXX_COMPILER=clang++-15
           make -j$(nproc)
           cp ../../../../../../3rdparty/MNN/libs/* ./
           chmod 777 *
