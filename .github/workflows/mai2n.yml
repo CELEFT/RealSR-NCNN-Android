@@ -120,10 +120,10 @@ jobs:
 
       - name: Test MNNSR with a sample image
         run: |
-          wget -nv https://huggingface.co/tumuyan2/realsr-models/resolve/main/models-MNNSR/RealESGAN-SourceBook-latest.mnn
+          wget -nv https://github.com/CELEFT/C/releases/download/mnn/4x-UltraSharpV2-fp16.mnn
           cd mnnsr
-          wget https://github.com/nihui/waifu2x-ncnn-vulkan/raw/master/images/0.jpg
-          ./mnnsr-ncnn -b 0 -i 0.jpg -o output-ubuntu24-cuda12.2.png -s 2 -m ../RealESGAN-SourceBook-latest.mnn
+          wget https://github.com/CELEFT/C/releases/download/mnn/Magick_0216_125118.png
+          ./mnnsr-ncnn -b 0 -i Magick_0216_125118.png -o output-ubuntu24-cuda12.2.png -s 4 -m ../4x-UltraSharpV2-fp16.mnn
           cd ..
           cp -r mnnsr mnnsr-ubuntu24-cuda12.2-opencl-vulkan-cpu
         working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
