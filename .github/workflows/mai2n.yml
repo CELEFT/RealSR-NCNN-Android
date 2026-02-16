@@ -1,0 +1,135 @@
+name: MNNSR for Linux (Ubuntu 24.04 + CUDA 12.2)
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
+      - '.github/workflows/mnnsr-linux-ubuntu24-cuda12.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential unzip cmake git wget \
+            libopencv-dev ocl-icd-opencl-dev clinfo \
+            libvulkan-dev vulkan-tools \
+            gcc-12 g++-12          # 安装 GCC 12
+          # 设置系统默认 gcc/g++ 为 12 版本
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 \
+            --slave /usr/bin/g++ g++ /usr/bin/g++-12
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-12 120
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-12 120
+
+      - name: Clone 3rdparty
+        run: |
+          git clone https://github.com/webmproject/libwebp --depth 1
+          wget -nv https://github.com/CELEFT/C/releases/download/mnn/MNN-3.4-static.tar.xz
+          tar -xf MNN-3.4-static.tar.xz
+          wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
+          unzip ncnn-20250503-ubuntu-2404-shared.zip
+          mv ncnn-20250503-ubuntu-2404-shared ncnn-ubuntu-shared
+        working-directory: 3rdparty
+
+      - name: Modify CMakeLists.txt for RPATH
+        run: |
+          sed -i.bak '/target_link_libraries(MNN PUBLIC -pthread dl)/a \
+            set_target_properties(MNN PROPERTIES \
+                BUILD_RPATH "$ORIGIN/lib" \
+            )
+          ' CMakeLists.txt
+          grep -C 5 "target_link_libraries(MNN PUBLIC -pthread dl)" CMakeLists.txt
+        working-directory: 3rdparty/MNN
+
+      - name: Set up CUDA 12.2
+        id: cuda
+        uses: Jimver/cuda-toolkit@v0.2.25
+        with:
+          cuda: '12.2.0'
+          use-github-cache: false
+          use-local-cache: false
+          log-file-suffix: 'ubuntu24-cuda12.2.txt'
+
+      - name: Verify system and CUDA
+        run: |
+          gcc --version          # 应显示 GCC 12
+          nvcc --version
+          echo "CPU cores: $(nproc)"
+          pwd
+
+      - name: Build MNN
+        id: mnn
+        run: |
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMNN_TENSORRT=OFF \
+            -DMNN_OPENGL=OFF \
+            -DMNN_OPENCL=ON \
+            -DMNN_VULKAN=ON \
+            -DMNN_CUDA=ON \
+            -DMNN_SEP_BUILD=OFF
+          make -j$(nproc)
+          mkdir ../libs
+          cp -v $(find . -name "libMNN*.so") ../libs/
+          ls -lh ../libs/
+        working-directory: 3rdparty/MNN
+
+      - name: Upload CUDA / MNN build logs on failure
+        if: steps.cuda.outcome == 'failure' || steps.mnn.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-build-failure-logs-ubuntu24-cuda12.2
+          path: |
+            /var/log/cuda-installer.log
+            3rdparty/MNN/build/Makefile
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Build MNNSR
+        run: |
+          ls ../../../../../3rdparty/MNN/libs/
+          mkdir -p build && cd build
+          cmake ..
+          make -j$(nproc)
+          cp ../../../../../../3rdparty/MNN/libs/* ./
+          chmod 777 *
+          ls -lh
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Copy libraries and prepare distribution
+        continue-on-error: true
+        run: |
+          mkdir -p mnnsr/lib
+          cp build/*.so mnnsr/lib/
+          cp build/mnnsr-ncnn mnnsr/
+          ldd mnnsr/lib/libMNN.so | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
+          ldd mnnsr/mnnsr-ncnn | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
+          cp ../../../../*.md mnnsr/ 2>/dev/null || true
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Test MNNSR with a sample image
+        run: |
+          wget -nv https://huggingface.co/tumuyan2/realsr-models/resolve/main/models-MNNSR/RealESGAN-SourceBook-latest.mnn
+          cd mnnsr
+          wget https://github.com/nihui/waifu2x-ncnn-vulkan/raw/master/images/0.jpg
+          ./mnnsr-ncnn -b 0 -i 0.jpg -o output-ubuntu24-cuda12.2.png -s 2 -m ../RealESGAN-SourceBook-latest.mnn
+          cd ..
+          cp -r mnnsr mnnsr-ubuntu24-cuda12.2-opencl-vulkan-cpu
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnnsr-ubuntu24-cuda12.2
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-ubuntu24-cuda12.2-opencl-vulkan-cpu
+          retention-days: 90
