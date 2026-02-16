@@ -23,12 +23,13 @@ jobs:
             build-essential unzip cmake git wget \
             libopencv-dev ocl-icd-opencl-dev clinfo \
             libvulkan-dev vulkan-tools \
-            clang-15               # 添加 Clang 15
+            clang-15
 
       - name: Clone 3rdparty
         run: |
           git clone https://github.com/webmproject/libwebp --depth 1
-          wget -nv https://tmp-j2.vx-cdn.com/file-6991cf381d46c-6991cf7f86fc6/MNN-3.4-static.tar.xz
+          # 使用用户提供的链接下载 MNN 3.4 静态库/源码
+          wget -nv https://tmp-j2.vx-cdn.com/file-6991cf381d46c-6992757a28ae4/MNN-3.4-static.tar.xz
           tar -xf MNN-3.4-static.tar.xz
           wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
           unzip ncnn-20250503-ubuntu-2404-shared.zip
@@ -56,20 +57,19 @@ jobs:
 
       - name: Verify system and CUDA
         run: |
-          gcc --version          # 系统 GCC 仍会存在，但构建将使用 Clang
+          gcc --version
           nvcc --version
-          clang-15 --version     # 确认 Clang 15 已安装
+          clang-15 --version
           echo "CPU cores: $(nproc)"
           pwd
 
       - name: Build MNN
         id: mnn
         run: |
-          rm -r build
           mkdir build && cd build
           cmake .. \
-            -DCMAKE_C_COMPILER=clang-15 \          # 指定 C 编译器为 Clang 15
-            -DCMAKE_CXX_COMPILER=clang++-15 \      # 指定 C++ 编译器为 Clang 15
+            -DCMAKE_C_COMPILER=clang-15 \
+            -DCMAKE_CXX_COMPILER=clang++-15 \
             -DCMAKE_BUILD_TYPE=Release \
             -DMNN_TENSORRT=OFF \
             -DMNN_OPENGL=OFF \
@@ -99,7 +99,7 @@ jobs:
           ls ../../../../../3rdparty/MNN/libs/
           mkdir build && cd build
           cmake .. \
-            -DCMAKE_C_COMPILER=clang-15 \          # 同样使用 Clang 15
+            -DCMAKE_C_COMPILER=clang-15 \
             -DCMAKE_CXX_COMPILER=clang++-15
           make -j$(nproc)
           cp ../../../../../../3rdparty/MNN/libs/* ./
