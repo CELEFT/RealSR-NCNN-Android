@@ -23,8 +23,7 @@ jobs:
             build-essential unzip cmake git wget \
             libopencv-dev ocl-icd-opencl-dev clinfo \
             libvulkan-dev vulkan-tools \
-            gcc-12 g++-12          # 安装 GCC 12
-          # 设置系统默认 gcc/g++ 为 12 版本
+            gcc-12 g++-12
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 \
             --slave /usr/bin/g++ g++ /usr/bin/g++-12
           sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-12 120
@@ -61,7 +60,7 @@ jobs:
 
       - name: Verify system and CUDA
         run: |
-          gcc --version          # 应显示 GCC 12
+          gcc --version
           nvcc --version
           echo "CPU cores: $(nproc)"
           pwd
@@ -96,7 +95,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-      # 新增：上传 MNN 完整构建目录（成功时）
       - name: Upload MNN build directory
         uses: actions/upload-artifact@v4
         with:
@@ -104,11 +102,14 @@ jobs:
           path: 3rdparty/MNN/build
           retention-days: 90
 
+      # ⭐ 修改点：为 MNNSR 编译添加 LDFLAGS
       - name: Build MNNSR
         run: |
           ls ../../../../../3rdparty/MNN/libs/
           mkdir -p build && cd build
-          cmake ..
+          cmake .. \
+            -DCMAKE_CXX_FLAGS="-fPIE" \
+            -DCMAKE_EXE_LINKER_FLAGS="-pie -Wl,-rpath,./lib -static-libstdc++"
           make -j$(nproc)
           cp ../../../../../../3rdparty/MNN/libs/* ./
           chmod 777 *
