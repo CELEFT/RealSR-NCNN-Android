@@ -35,9 +35,9 @@ jobs:
           git clone https://github.com/webmproject/libwebp --depth 1
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/MNN-3.4-static.tar.xz
           tar -xf MNN-3.4-static.tar.xz
-          wget -nv https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404-shared.zip
-          unzip ncnn-20250503-ubuntu-2404-shared.zip
-          mv ncnn-20250503-ubuntu-2404-shared ncnn-ubuntu-shared
+          wget -nv https://github.com/Tencent/ncnn/releases/download/20260113/ncnn-20260113-ubuntu-2404-shared.zip
+          unzip ncnn-20260113-ubuntu-2404-shared.zip
+          mv ncnn-20260113-ubuntu-2404-shared ncnn-ubuntu-shared
         working-directory: 3rdparty
 
       - name: Modify CMakeLists.txt for RPATH
