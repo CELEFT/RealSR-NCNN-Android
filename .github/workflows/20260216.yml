@@ -5,7 +5,7 @@ on:
     branches: [ master ]
     paths:
       - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
-      - '.github/workflows/mnnsr-linux-ubuntu24-cuda12.yml'
+      - '.github/workflows/20260216.yml'
   workflow_dispatch:
 
 jobs:
