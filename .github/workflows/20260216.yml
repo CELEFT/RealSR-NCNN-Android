@@ -1,4 +1,4 @@
-name: MNNSR for Linux (Ubuntu 24.04 + CUDA 12.2)
+name: MNNSR for Linux (Ubuntu 24.04)
 
 on:
   push:
@@ -49,26 +49,16 @@ jobs:
           grep -C 5 "target_link_libraries(MNN PUBLIC -pthread dl)" CMakeLists.txt
         working-directory: 3rdparty/MNN
 
-      - name: Set up CUDA 12.2
-        id: cuda
-        uses: Jimver/cuda-toolkit@v0.2.25
-        with:
-          cuda: '12.2.0'
-          use-github-cache: false
-          use-local-cache: false
-          log-file-suffix: 'ubuntu24-cuda12.2.txt'
-
-      - name: Verify system and CUDA
+      - name: Verify system
         run: |
           gcc --version
-          nvcc --version
           echo "CPU cores: $(nproc)"
           pwd
 
       - name: Build MNN
         id: mnn
         run: |
-          rm -r build
+          rm -rf build
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
@@ -76,7 +66,6 @@ jobs:
             -DMNN_OPENGL=OFF \
             -DMNN_OPENCL=ON \
             -DMNN_VULKAN=ON \
-            -DMNN_CUDA=ON \
             -DMNN_SEP_BUILD=OFF
           make -j$(nproc)
           mkdir ../libs
@@ -84,13 +73,12 @@ jobs:
           ls -lh ../libs/
         working-directory: 3rdparty/MNN
 
-      - name: Upload CUDA / MNN build logs on failure
-        if: steps.cuda.outcome == 'failure' || steps.mnn.outcome == 'failure'
+      - name: Upload MNN build logs on failure
+        if: steps.mnn.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: cuda-build-failure-logs-ubuntu24-cuda12.2
+          name: mnn-build-failure-logs-ubuntu24
           path: |
-            /var/log/cuda-installer.log
             3rdparty/MNN/build/Makefile
           if-no-files-found: ignore
           retention-days: 1
@@ -98,18 +86,15 @@ jobs:
       - name: Upload MNN build directory
         uses: actions/upload-artifact@v4
         with:
-          name: mnn-build-ubuntu24-cuda12.2
+          name: mnn-build-ubuntu24
           path: 3rdparty/MNN/build
           retention-days: 90
 
-      # ⭐ 修改点：为 MNNSR 编译添加 LDFLAGS
       - name: Build MNNSR
         run: |
           ls ../../../../../3rdparty/MNN/libs/
           mkdir -p build && cd build
-          cmake .. \
-            -DCMAKE_CXX_FLAGS="-fPIE" \
-            -DCMAKE_EXE_LINKER_FLAGS="-pie -Wl,-rpath,./lib -static-libstdc++"
+          cmake ..
           make -j$(nproc)
           cp ../../../../../../3rdparty/MNN/libs/* ./
           chmod 777 *
@@ -132,14 +117,14 @@ jobs:
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/4x-UltraSharpV2-fp16.mnn
           cd mnnsr
           wget https://github.com/CELEFT/C/releases/download/mnn/Magick_0216_125118.png
-          ./mnnsr-ncnn -b 0 -i Magick_0216_125118.png -o output-ubuntu24-cuda12.2.png -s 4 -m ../4x-UltraSharpV2-fp16.mnn
+          ./mnnsr-ncnn -b 0 -i Magick_0216_125118.png -o output-ubuntu24.png -s 4 -m ../4x-UltraSharpV2-fp16.mnn
           cd ..
-          cp -r mnnsr mnnsr-ubuntu24-cuda12.2-opencl-vulkan-cpu
+          cp -r mnnsr mnnsr-ubuntu24-opencl-vulkan-cpu
         working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
 
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-ubuntu24-cuda12.2
-          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-ubuntu24-cuda12.2-opencl-vulkan-cpu
+          name: mnnsr-ubuntu24
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-ubuntu24-opencl-vulkan-cpu
           retention-days: 90
