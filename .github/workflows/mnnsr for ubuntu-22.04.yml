@@ -1,11 +1,11 @@
-name: MNNSR for Linux CPU (Debian 12)
+name: MNNSR for Linux (Ubuntu 22.04)
 
 on:
   push:
     branches: [ master ]
     paths:
       - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
-      - '.github/workflows/mnnsr-linux-debian12.yml'
+      - '.github/workflows/mnnsr-linux-ubuntu22.yml'
   workflow_dispatch:
 
 jobs:
@@ -34,24 +34,9 @@ jobs:
           git clone https://github.com/webmproject/libwebp --depth 1
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/MNN-3.4-static.tar.xz
           tar -xf MNN-3.4-static.tar.xz
-          # 从源码编译 ncnn，不再使用 Ubuntu 24.04 预编译包
-          git clone https://github.com/Tencent/ncnn.git --depth 1 
-        working-directory: 3rdparty
-
-      - name: Build ncnn
-        run: |
-          cd ncnn
-          mkdir -p build && cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DNCNN_VULKAN=ON \
-            -DNCNN_BUILD_EXAMPLES=OFF \
-            -DNCNN_BUILD_TOOLS=OFF \
-            -DNCNN_SHARED_LIB=ON \
-            -DCMAKE_INSTALL_PREFIX=../install
-          make -j$(nproc)
-          make install
-          cd ../..
+          wget -nv https://github.com/Tencent/ncnn/releases/download/20260113/ncnn-20260113-ubuntu-2204-shared.zip
+          unzip ncnn-20260113-ubuntu-2204-shared.zip
+          mv ncnn-20260113-ubuntu-2204-shared ncnn-ubuntu-shared
         working-directory: 3rdparty
 
       - name: Modify CMakeLists.txt for RPATH
@@ -81,6 +66,7 @@ jobs:
             -DMNN_OPENGL=OFF \
             -DMNN_OPENCL=ON \
             -DMNN_VULKAN=ON \
+            -DMNN_CUDA=OFF \
             -DMNN_SEP_BUILD=OFF
           make -j$(nproc)
           mkdir ../libs
@@ -88,20 +74,10 @@ jobs:
           ls -lh ../libs/
         working-directory: 3rdparty/MNN
 
-      - name: Upload MNN build logs on failure
-        if: steps.mnn.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mnn-build-failure-logs-debian12
-          path: |
-            3rdparty/MNN/build/Makefile
-          if-no-files-found: ignore
-          retention-days: 1
-
       - name: Upload MNN build directory
         uses: actions/upload-artifact@v4
         with:
-          name: mnn-build-debian12
+          name: mnn-build-ubuntu22
           path: 3rdparty/MNN/build
           retention-days: 90
 
@@ -109,10 +85,7 @@ jobs:
         run: |
           ls ../../../../../3rdparty/MNN/libs/
           mkdir -p build && cd build
-          # 指定 ncnn 的安装路径和 MNN 库路径
-          cmake .. \
-            -Dncnn_DIR=../../../../3rdparty/ncnn/install/lib/cmake/ncnn \
-            -DMNN_LIB_PATH=../../../../../3rdparty/MNN/libs
+          cmake ..
           make -j$(nproc)
           cp ../../../../../../3rdparty/MNN/libs/* ./
           chmod 777 *
@@ -125,8 +98,6 @@ jobs:
           mkdir -p mnnsr/lib
           cp build/*.so mnnsr/lib/
           cp build/mnnsr-ncnn mnnsr/
-          # 复制 ncnn 库（从编译好的安装目录复制）
-          cp ../../../../3rdparty/ncnn/install/lib/libncnn.so mnnsr/lib/ || true
           ldd mnnsr/lib/libMNN.so | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
           ldd mnnsr/mnnsr-ncnn | grep "=>" | awk '{print $3}' | xargs -I {} cp -Ln {} mnnsr/lib/ 2>/dev/null || true
           cp ../../../../*.md mnnsr/ 2>/dev/null || true
@@ -137,14 +108,14 @@ jobs:
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/4x-UltraSharpV2-fp16.mnn
           cd mnnsr
           wget https://github.com/CELEFT/C/releases/download/mnn/Magick_0216_125118.png
-          LD_LIBRARY_PATH=./lib ./mnnsr-ncnn -b 0 -i Magick_0216_125118.png -o output-debian12.png -s 4 -m ../4x-UltraSharpV2-fp16.mnn
+          ./mnnsr-ncnn -b 0 -i Magick_0216_125118.png -o output-ubuntu22.png -s 4 -m ../4x-UltraSharpV2-fp16.mnn
           cd ..
-          cp -r mnnsr mnnsr-debian12-opencl-vulkan-cpu
+          cp -r mnnsr mnnsr-ubuntu22-opencl-vulkan
         working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
 
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-debian12
-          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-debian12-opencl-vulkan-cpu
+          name: mnnsr-ubuntu22
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/mnnsr-ubuntu22-opencl-vulkan
           retention-days: 90
