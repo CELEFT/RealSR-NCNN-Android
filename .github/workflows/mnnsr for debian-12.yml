@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: debian-12  # 修改为 Debian 12
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
