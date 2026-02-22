@@ -35,7 +35,6 @@ jobs:
           echo "ANDROID_NDK=$PWD/android-ndk-r29" >> $GITHUB_ENV
         working-directory: 3rdparty
 
-      # 使用新的 MNN 预编译包，整理库文件和头文件
       - name: Download prebuilt MNN for Android and organize
         run: |
           mkdir -p mnn_android
@@ -43,10 +42,9 @@ jobs:
           wget -nv --retry-connrefused --waitretry=5 --timeout=30 --tries=5 \
             https://github.com/CELEFT/C/releases/download/mnn/mnn-android-api30-build.tar.xz
           tar xvf mnn-android-api30-build.tar.xz
-          # 解压后得到 build 目录，内部包含多个 .so 文件
-          # 创建 ABI 子目录（项目硬编码为 arm64-v8a）
+          # 创建 ABI 子目录
           mkdir -p arm64-v8a
-          # 复制所有 .so 文件到 arm64-v8a/ 下（包括 libMNN.so, libMNN_CL.so, libMNN_Express.so 等）
+          # 复制所有 .so 文件到 arm64-v8a/ 下
           find build -name "*.so" -exec cp {} arm64-v8a/ \;
           # 复制头文件目录（build/MNN/ 包含 Tensor.hpp 等）
           if [ -d build/MNN ]; then
@@ -99,8 +97,8 @@ jobs:
             -DOpenCV_DIR=$OpenCV_DIR \
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
             -DMNN_ROOT=$MNN_ROOT \
-            -DMNN_INCLUDE_DIR=$MNN_ROOT/include \
-            -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
+            -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp \
+            -DCMAKE_CXX_FLAGS="-I$MNN_ROOT/include"
           make -j$(nproc)
           mkdir -p mnnsr-android/lib
           cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
@@ -111,6 +109,6 @@ jobs:
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-android-ndkr29-30
+          name: mnnsr-android-ndk29-${{ env.ABI }}
           path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/build/mnnsr-android
           retention-days: 90
