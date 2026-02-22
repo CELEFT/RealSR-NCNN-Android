@@ -35,26 +35,57 @@ jobs:
           echo "ANDROID_NDK=$PWD/android-ndk-r29" >> $GITHUB_ENV
         working-directory: 3rdparty
 
-      - name: Download prebuilt MNN for Android and organize
+      # 使用新的 MNN 预编译包 MNN.zip
+      - name: Download and prepare MNN for Android
         run: |
           mkdir -p mnn_android
           cd mnn_android
           wget -nv --retry-connrefused --waitretry=5 --timeout=30 --tries=5 \
-            https://github.com/CELEFT/C/releases/download/mnn/mnn-android-api30-build.tar.xz
-          tar xvf mnn-android-api30-build.tar.xz
+            https://github.com/CELEFT/C/releases/download/mnn/MNN.zip
+          unzip -q MNN.zip
+          # 解压后得到 MNN/ 目录，内含 lib/ 和 include/
+          # 查看解压后的结构（用于调试）
+          echo "=== MNN package structure ==="
+          find MNN -type f | head -10
           # 创建 ABI 子目录（项目硬编码为 arm64-v8a）
           mkdir -p arm64-v8a
-          # 复制所有 .so 文件到 arm64-v8a/ 下
-          find build -name "*.so" -exec cp {} arm64-v8a/ \;
-          # 复制头文件目录（build/MNN/ 包含 Tensor.hpp 等）
-          if [ -d build/MNN ]; then
-              cp -r build/MNN include/
+          # 将所有 .so 文件从 MNN/lib/ 复制到 arm64-v8a/
+          if [ -d MNN/lib ]; then
+              cp MNN/lib/*.so arm64-v8a/ 2>/dev/null || echo "No .so files found in MNN/lib/"
           else
-              echo "Error: MNN headers not found"
+              echo "Warning: MNN/lib directory not found, searching for .so files elsewhere"
+              find MNN -name "*.so" -exec cp {} arm64-v8a/ \;
+          fi
+          # 检查必要的库是否存在
+          if [ ! -f arm64-v8a/libMNN.so ]; then
+              echo "Error: libMNN.so not found"
               exit 1
           fi
+          # 创建 libMNN_CL.so 软链接（项目有时需要）
+          ln -sf libMNN.so arm64-v8a/libMNN_CL.so
+          # 处理头文件：期望 MNN/include/ 下包含 MNN/ 子目录
+          if [ -d MNN/include ]; then
+              # 检查是直接包含头文件还是包含 MNN/ 子目录
+              if [ -f MNN/include/MNN/Tensor.hpp ]; then
+                  # 已经是 include/MNN/Tensor.hpp，直接复制
+                  cp -r MNN/include ./
+              elif [ -d MNN/include/MNN ]; then
+                  # 包含 MNN/ 子目录，复制整个 include
+                  cp -r MNN/include ./
+              else
+                  # 其他情况：假设头文件直接在 include 下，创建 MNN/ 子目录并移动
+                  mkdir -p include/MNN
+                  mv MNN/include/* include/MNN/ 2>/dev/null || true
+              fi
+          else
+              echo "Error: MNN/include directory not found"
+              exit 1
+          fi
+          # 验证头文件位置
+          echo "=== Header files ==="
+          ls -la include/MNN/ || echo "MNN/ subdir not found in include/"
           # 清理临时文件
-          rm -rf build
+          rm -rf MNN MNN.zip
         working-directory: 3rdparty
 
       - name: Download prebuilt ncnn for Android (with Vulkan)
@@ -87,25 +118,15 @@ jobs:
 
       - name: Build MNNSR for Android
         run: |
-          # 诊断步骤：打印关键路径和文件，确保一切就绪
-          echo "MNN_ROOT: $MNN_ROOT"
-          ls -la $MNN_ROOT/
-          echo "--- Include directory ---"
-          ls -la $MNN_ROOT/include/ || true
-          echo "--- MNN subdirectory ---"
+          # 验证 MNN 头文件是否存在（用于调试）
+          echo "Checking MNN headers:"
           ls -la $MNN_ROOT/include/MNN/ || true
-          echo "--- Libraries directory ---"
-          ls -la $MNN_ROOT/arm64-v8a/ || true
-
-          # 强制设置 CXXFLAGS 环境变量，让 CMake 在初始化时使用它
+          # 设置 CXXFLAGS 环境变量确保头文件路径
           export CXXFLAGS="-I$MNN_ROOT/include"
-
-          # 进入构建目录，并彻底清理旧缓存
-          cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
-          rm -rf build
           mkdir -p build && cd build
-
-          # 运行 CMake 配置
+          # 清除缓存强制重新配置
+          rm -f CMakeCache.txt
+          rm -rf CMakeFiles
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ABI \
@@ -116,16 +137,12 @@ jobs:
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
             -DMNN_ROOT=$MNN_ROOT \
             -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
-
-          # 编译
           make -j$(nproc)
-
-          # 收集产物
           mkdir -p mnnsr-android/lib
           cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
           find . -name "*.so" -exec cp {} mnnsr-android/lib/ \;
           cp ../../../../*.md mnnsr-android/ 2>/dev/null || true
-        working-directory: ${{ github.workspace }}
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
 
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
