@@ -39,7 +39,7 @@ jobs:
           mkdir -p MNN
           cd MNN
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/lib.zip
-          unzip lib.zip
+          unzip -q lib.zip
           # 假设 lib.zip 解压后包含 include/ 和 lib/ 目录
         working-directory: 3rdparty
 
@@ -56,7 +56,11 @@ jobs:
           unzip -q opencv-4.13.0-android-sdk.zip
           # 解压后目录为 OpenCV-android-sdk
         working-directory: 3rdparty
-
+      - name: Download libwebp source
+       run: |
+          git clone https://github.com/webmproject/libwebp --depth 1 3rdparty/libwebp
+       working-directory: ${{ github.workspace }}  # 确保克隆到 3rdparty 目录下
+  
       - name: Set up CMake toolchain and variables
         run: |
           echo "ABI=arm64-v8a" >> $GITHUB_ENV
@@ -77,6 +81,7 @@ jobs:
             -DOpenCV_DIR=$OpenCV_DIR \
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
             -DMNN_DIR=$MNN_DIR
+            -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
           make -j$(nproc)
           # 收集产物：可执行文件和依赖的 .so
           mkdir -p mnnsr-android/lib
@@ -89,6 +94,6 @@ jobs:
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-android-ndk29-30
+          name: mnnsr-android-ndk29-${{ env.ABI }}
           path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/build/mnnsr-android
           retention-days: 90
