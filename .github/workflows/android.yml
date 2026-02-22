@@ -1,59 +1,94 @@
-name: Compile RealSR-NCNN-Android-GUI
+name: MNNSR for Android (NDK r29)
 
 on:
   push:
-    branches: [main]
+    branches: [ master ]
     paths:
-      - 'RealSR-NCNN-Android-GUI/**'
-      - '.github/workflows/android.yml'  
+      - 'RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/**'
+      - '.github/workflows/mnnsr-android.yml'
   workflow_dispatch:
-  
-env:
-  # CI_NAME: Custom CI
-  ASSETS_URL: https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.11.1/assets.zip
-  NCNN_URL: https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-android-vulkan-shared.zip
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout last commit
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Download NCNN and Assets
-      run: |
-        echo $GITHUB_WORKSPACE
-        pwd
-        wget $ASSETS_URL
-        wget $NCNN_URL -O ncnn-android-vulkan-shared.zip
-        mkdir -p 3rdparty
-        ls
-        unzip  -o  assets.zip -d RealSR-NCNN-Android-GUI/app/src/main/assets
-        unzip  -o  ncnn-android-vulkan-shared.zip -d 3rdparty/ncnn-android-vulkan-shared
-        
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential unzip cmake git wget file \
+            gcc-12 g++-12
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 \
+            --slave /usr/bin/g++ g++ /usr/bin/g++-12
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-12 120
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-12 120
 
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: "temurin"
-        java-version: 17
-        cache: 'gradle'
+      - name: Download and setup Android NDK
+        run: |
+          wget -nv https://googledownloads.cn/android/repository/android-ndk-r29-linux.zip
+          unzip -q android-ndk-r29-linux.zip
+          echo "ANDROID_NDK=$PWD/android-ndk-r29" >> $GITHUB_ENV
+        working-directory: 3rdparty
 
+      - name: Download prebuilt MNN for Android
+        run: |
+          mkdir -p MNN
+          cd MNN
+          wget -nv https://github.com/CELEFT/C/releases/download/mnn/lib.zip
+          unzip -q lib.zip
+          # 假设 lib.zip 解压后包含 include/ 和 lib/ 目录
+        working-directory: 3rdparty
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      - name: Download prebuilt ncnn for Android (with Vulkan)
+        run: |
+          wget -nv https://github.com/Tencent/ncnn/releases/download/20260113/ncnn-20260113-android-vulkan-shared.zip
+          unzip -q ncnn-20260113-android-vulkan-shared.zip
+          mv ncnn-20260113-android-vulkan-shared ncnn-android
+        working-directory: 3rdparty
 
+      - name: Download OpenCV Android SDK
+        run: |
+          wget -nv https://github.com/opencv/opencv/releases/download/4.13.0/opencv-4.13.0-android-sdk.zip
+          unzip -q opencv-4.13.0-android-sdk.zip
+          # 解压后目录为 OpenCV-android-sdk
+        working-directory: 3rdparty
 
-    - name: Build Gui
-      run: |
-        cd RealSR-NCNN-Android-GUI && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Set up CMake toolchain and variables
+        run: |
+          echo "ABI=arm64-v8a" >> $GITHUB_ENV
+          echo "MNN_DIR=$PWD/3rdparty/MNN" >> $GITHUB_ENV
+          echo "NCNN_DIR=$PWD/3rdparty/ncnn-android" >> $GITHUB_ENV
+          echo "OpenCV_DIR=$PWD/3rdparty/OpenCV-android-sdk/sdk/native/jni" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}
 
-    - name: Upload Apk artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: RealSR-NCNN-Android-GUI.zip
-        path: RealSR-NCNN-Android-GUI/app/build/outputs/apk/**/*.apk
-        # keep 90 days
-        retention-days: 90
+      - name: Build MNNSR for Android
+        run: |
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=$ABI \
+            -DANDROID_PLATFORM=android-30 \
+            -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOpenCV_DIR=$OpenCV_DIR \
+            -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
+            -DMNN_DIR=$MNN_DIR
+          make -j$(nproc)
+          # 收集产物：可执行文件和依赖的 .so
+          mkdir -p mnnsr-android/lib
+          cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
+          find . -name "*.so" -exec cp {} mnnsr-android/lib/ \;
+          # 复制必要的说明文件
+          cp ../../../../*.md mnnsr-android/ 2>/dev/null || true
+        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnnsr-android-ndk29-30
+          path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/build/mnnsr-android
+          retention-days: 90
