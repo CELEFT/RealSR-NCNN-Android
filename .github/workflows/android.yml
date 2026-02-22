@@ -39,7 +39,7 @@ jobs:
           mkdir -p MNN
           cd MNN
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/lib.zip
-          unzip -q lib.zip
+          unzip lib.zip
           # 假设 lib.zip 解压后包含 include/ 和 lib/ 目录
         working-directory: 3rdparty
 
