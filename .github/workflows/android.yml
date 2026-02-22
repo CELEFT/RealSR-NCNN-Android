@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -56,11 +56,12 @@ jobs:
           unzip -q opencv-4.13.0-android-sdk.zip
           # 解压后目录为 OpenCV-android-sdk
         working-directory: 3rdparty
+
       - name: Download libwebp source
-       run: |
+        run: |
           git clone https://github.com/webmproject/libwebp --depth 1 3rdparty/libwebp
-       working-directory: ${{ github.workspace }}  # 确保克隆到 3rdparty 目录下
-  
+        working-directory: ${{ github.workspace }}
+
       - name: Set up CMake toolchain and variables
         run: |
           echo "ABI=arm64-v8a" >> $GITHUB_ENV
@@ -80,7 +81,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DOpenCV_DIR=$OpenCV_DIR \
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
-            -DMNN_DIR=$MNN_DIR
+            -DMNN_DIR=$MNN_DIR \
             -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
           make -j$(nproc)
           # 收集产物：可执行文件和依赖的 .so
