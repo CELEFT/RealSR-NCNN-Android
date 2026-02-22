@@ -42,7 +42,7 @@ jobs:
           wget -nv --retry-connrefused --waitretry=5 --timeout=30 --tries=5 \
             https://github.com/CELEFT/C/releases/download/mnn/mnn-android-api30-build.tar.xz
           tar xvf mnn-android-api30-build.tar.xz
-          # 创建 ABI 子目录
+          # 创建 ABI 子目录（项目硬编码为 arm64-v8a）
           mkdir -p arm64-v8a
           # 复制所有 .so 文件到 arm64-v8a/ 下
           find build -name "*.so" -exec cp {} arm64-v8a/ \;
@@ -87,17 +87,25 @@ jobs:
 
       - name: Build MNNSR for Android
         run: |
-          # 验证 MNN 头文件是否存在
+          # 诊断步骤：打印关键路径和文件，确保一切就绪
           echo "MNN_ROOT: $MNN_ROOT"
-          ls -la $MNN_ROOT/include/
-          ls -la $MNN_ROOT/include/MNN/ || echo "MNN/ subdir not found"
-          # 设置 CXXFLAGS 环境变量，让 CMake 使用它作为初始 CMAKE_CXX_FLAGS
+          ls -la $MNN_ROOT/
+          echo "--- Include directory ---"
+          ls -la $MNN_ROOT/include/ || true
+          echo "--- MNN subdirectory ---"
+          ls -la $MNN_ROOT/include/MNN/ || true
+          echo "--- Libraries directory ---"
+          ls -la $MNN_ROOT/arm64-v8a/ || true
+
+          # 强制设置 CXXFLAGS 环境变量，让 CMake 在初始化时使用它
           export CXXFLAGS="-I$MNN_ROOT/include"
-          # 进入构建目录
+
+          # 进入构建目录，并彻底清理旧缓存
+          cd RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+          rm -rf build
           mkdir -p build && cd build
-          # 清除之前的缓存（如果有）
-          rm -f CMakeCache.txt
-          rm -rf CMakeFiles
+
+          # 运行 CMake 配置
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ABI \
@@ -108,16 +116,20 @@ jobs:
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
             -DMNN_ROOT=$MNN_ROOT \
             -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
+
+          # 编译
           make -j$(nproc)
+
+          # 收集产物
           mkdir -p mnnsr-android/lib
           cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
           find . -name "*.so" -exec cp {} mnnsr-android/lib/ \;
           cp ../../../../*.md mnnsr-android/ 2>/dev/null || true
-        working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
+        working-directory: ${{ github.workspace }}
 
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-android-ndkr29-API30
+          name: mnnsr-android-ndk29-${{ env.ABI }}
           path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/build/mnnsr-android
           retention-days: 90
