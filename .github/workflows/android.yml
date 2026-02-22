@@ -34,13 +34,24 @@ jobs:
           echo "ANDROID_NDK=$PWD/android-ndk-r29" >> $GITHUB_ENV
         working-directory: 3rdparty
 
-      - name: Download prebuilt MNN for Android
+      # 修正 MNN 下载步骤：按照项目期望的路径结构组织
+      - name: Download prebuilt MNN for Android and organize
         run: |
-          mkdir -p MNN
-          cd MNN
+          mkdir -p mnn_android
+          cd mnn_android
           wget -nv https://github.com/CELEFT/C/releases/download/mnn/lib.zip
           unzip -q lib.zip
-          # 假设 lib.zip 解压后包含 include/ 和 lib/ 目录
+          # 创建 ABI 子目录（项目硬编码为 arm64-v8a）
+          mkdir -p arm64-v8a
+          # 移动 libMNN.so 到 ABI 子目录（假设解压后有 lib/ 或直接有 .so）
+          if [ -f lib/libMNN.so ]; then
+              mv lib/libMNN.so arm64-v8a/
+          elif [ -f libMNN.so ]; then
+              mv libMNN.so arm64-v8a/
+          else
+              echo "Error: libMNN.so not found"
+          fi
+          cd ..
         working-directory: 3rdparty
 
       - name: Download prebuilt ncnn for Android (with Vulkan)
@@ -65,7 +76,7 @@ jobs:
       - name: Set up CMake toolchain and variables
         run: |
           echo "ABI=arm64-v8a" >> $GITHUB_ENV
-          echo "MNN_DIR=$PWD/3rdparty/MNN" >> $GITHUB_ENV
+          echo "MNN_DIR=$PWD/3rdparty/mnn_android" >> $GITHUB_ENV
           echo "NCNN_DIR=$PWD/3rdparty/ncnn-android" >> $GITHUB_ENV
           echo "OpenCV_DIR=$PWD/3rdparty/OpenCV-android-sdk/sdk/native/jni" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}
@@ -84,11 +95,10 @@ jobs:
             -DMNN_DIR=$MNN_DIR \
             -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
           make -j$(nproc)
-          # 收集产物：可执行文件和依赖的 .so
+          # 收集产物
           mkdir -p mnnsr-android/lib
           cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
           find . -name "*.so" -exec cp {} mnnsr-android/lib/ \;
-          # 复制必要的说明文件
           cp ../../../../*.md mnnsr-android/ 2>/dev/null || true
         working-directory: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/
 
