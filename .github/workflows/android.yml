@@ -87,7 +87,17 @@ jobs:
 
       - name: Build MNNSR for Android
         run: |
+          # 验证 MNN 头文件是否存在
+          echo "MNN_ROOT: $MNN_ROOT"
+          ls -la $MNN_ROOT/include/
+          ls -la $MNN_ROOT/include/MNN/ || echo "MNN/ subdir not found"
+          # 设置 CXXFLAGS 环境变量，让 CMake 使用它作为初始 CMAKE_CXX_FLAGS
+          export CXXFLAGS="-I$MNN_ROOT/include"
+          # 进入构建目录
           mkdir -p build && cd build
+          # 清除之前的缓存（如果有）
+          rm -f CMakeCache.txt
+          rm -rf CMakeFiles
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ABI \
@@ -97,8 +107,7 @@ jobs:
             -DOpenCV_DIR=$OpenCV_DIR \
             -Dncnn_DIR=$NCNN_DIR/lib/cmake/ncnn \
             -DMNN_ROOT=$MNN_ROOT \
-            -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp \
-            -DCMAKE_CXX_FLAGS="-I$MNN_ROOT/include"
+            -DLIBWEBP_ROOT=${{ github.workspace }}/3rdparty/libwebp
           make -j$(nproc)
           mkdir -p mnnsr-android/lib
           cp mnnsr-ncnn mnnsr-android/ 2>/dev/null || true
@@ -109,6 +118,6 @@ jobs:
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mnnsr-android-ndk29-${{ env.ABI }}
+          name: mnnsr-android-ndkr29-API30
           path: RealSR-NCNN-Android-CLI/MNN-SR/src/main/jni/build/mnnsr-android
           retention-days: 90
