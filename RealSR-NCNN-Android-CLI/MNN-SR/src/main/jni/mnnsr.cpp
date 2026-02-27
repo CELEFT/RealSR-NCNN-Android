@@ -283,18 +283,15 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
     int tileWidth = tilesize - prepadding * 2;
     int tileHeight = tilesize - prepadding * 2;
 
-
+    // 计算初始的瓦片数量
     uint xtiles = (inWidth + tileWidth - 1) / tileWidth;
     uint ytiles = (inHeight + tileHeight - 1) / tileHeight;
-
 
     uint xPrepadding = prepadding, yPrepadding = prepadding;
 
     // 待重新分配的像素数
     int left = inWidth % tileWidth;
     if (xtiles > 1 && left > 0) {
-        //        fprintf(stderr, "process, xtiles=( (%d + %d - 1) / %d)=%d, left=%d, prepadding=%d\n",
-        //                inWidth, tileWidth, tileWidth, xtiles, left, prepadding);
         if (left < prepadding) {
             // 倒数第2个tile的prepadding已经包含了推理结果
             xtiles--;
@@ -305,15 +302,18 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
             // xtiles * (tilesize - 2 * xPrepadding) + xPrepadding = inWidth
             xPrepadding = (xtiles * tilesize - inWidth) / (2 * xtiles - 1);
             tileWidth = tilesize - xPrepadding * 2;
+            
+            // [FIX] 关键修复：重新计算xtiles，防止循环越界
+            if (tileWidth > 0) {
+                xtiles = (inWidth + tileWidth - 1) / tileWidth;
+                if (xtiles < 1) xtiles = 1;
+            }
         }
     }
     
-    // [Fix] Recalculate xtiles after adjusting tileWidth to prevent loop index out of bounds
-    if (tileWidth > 0) {
-        xtiles = (inWidth + tileWidth - 1) / tileWidth;
-        if (xtiles < 1) xtiles = 1;
-    }
-
+    // 再次检查，确保xtiles计算正确
+    if (xtiles == 0) xtiles = 1;
+    
     left = inHeight % tileHeight;
     if (ytiles > 1 && left > 0) {
         if (left < prepadding) {
@@ -326,13 +326,31 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
             // ytiles * (tilesize - 2 * yPrepadding) + yPrepadding = inHeight
             yPrepadding = (ytiles * tilesize - inHeight) / (2 * ytiles - 1);
             tileHeight = tilesize - yPrepadding * 2;
+            
+            // [FIX] 关键修复：重新计算ytiles，防止循环越界
+            if (tileHeight > 0) {
+                ytiles = (inHeight + tileHeight - 1) / tileHeight;
+                if (ytiles < 1) ytiles = 1;
+            }
         }
     }
+    
+    // 再次检查，确保ytiles计算正确
+    if (ytiles == 0) ytiles = 1;
 
-    // [Fix] Recalculate ytiles after adjusting tileHeight
-    if (tileHeight > 0) {
+    // 最终验证瓦片计算是否正确
+    if (xtiles * tileWidth < inWidth - tileWidth) {
+        fprintf(stderr, "[WARN] Tile calculation may be incorrect: xtiles=%d, tileWidth=%d, inWidth=%d\n",
+                xtiles, tileWidth, inWidth);
+        // 重新计算以确保覆盖整个图像
+        xtiles = (inWidth + tileWidth - 1) / tileWidth;
+    }
+    
+    if (ytiles * tileHeight < inHeight - tileHeight) {
+        fprintf(stderr, "[WARN] Tile calculation may be incorrect: ytiles=%d, tileHeight=%d, inHeight=%d\n",
+                ytiles, tileHeight, inHeight);
+        // 重新计算以确保覆盖整个图像
         ytiles = (inHeight + tileHeight - 1) / tileHeight;
-        if (ytiles < 1) ytiles = 1;
     }
 
     fprintf(stderr,
@@ -342,210 +360,238 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
     high_resolution_clock::time_point begin = high_resolution_clock::now();
     high_resolution_clock::time_point time_print_progress;
 
-    //    cv::Mat imageOut(outHeight, outWidth, inimage.type()); // 填充灰色背景
-
     for (uint yi = 0; yi < ytiles; yi++) {
-        // 从inimage中裁剪出含padding的tile （但是四边的tile需要再次padding）
+        // 从inimage中裁剪出含padding的tile
         int in_tile_y0 = (yi * tileHeight - yPrepadding);
         if (in_tile_y0 < 0)
             in_tile_y0 = 0;
+            
+        // [FIX] 边界检查：如果起始点已经超出图像，跳过
+        if (in_tile_y0 >= inHeight) {
+            fprintf(stderr, "[WARN] yi=%d: in_tile_y0=%d >= inHeight=%d, skipping\n", yi, in_tile_y0, inHeight);
+            continue;
+        }
         
-        // [Fix] Boundary check
-        if (in_tile_y0 >= inHeight) continue;
-
         int in_tile_y1 = (yi + 1) * tileHeight + yPrepadding;
         if (in_tile_y1 > inHeight)
             in_tile_y1 = inHeight;
+            
+        // 确保高度为正
+        if (in_tile_y1 <= in_tile_y0) {
+            fprintf(stderr, "[WARN] yi=%d: invalid tile height %d, skipping\n", yi, in_tile_y1 - in_tile_y0);
+            continue;
+        }
+            
         // 从tile推理结果去除padding部分
-        int out_tile_y0 = scale * (yi == 0 ? 0 : yPrepadding);
+        int out_tile_y0 = scale * yPrepadding;
 
         // 绘制到outimage的位置
         int out_y0 = yi * tileHeight * scale;
         int out_tile_h = (yi + 1 == ytiles) ? inHeight * scale - out_y0 : tileHeight * scale;
 
         for (uint xi = 0; xi < xtiles; xi++) {
-
-
             if (!inMask.empty()) {
-                int x0 = xi * tileWidth, x = xi == xtiles - 1 ? inWidth - xi * tileWidth :
-                    tileWidth, y0 = yi * tileHeight, y =
-                    yi == ytiles - 1 ? inHeight - yi * tileHeight : tileHeight;
+                int x0 = xi * tileWidth;
+                int x = (xi == xtiles - 1) ? inWidth - xi * tileWidth : tileWidth;
+                int y0 = yi * tileHeight;
+                int y = (yi == ytiles - 1) ? inHeight - yi * tileHeight : tileHeight;
+                    
+                // [FIX] 边界检查
+                if (x0 >= inWidth || y0 >= inHeight) {
+                    fprintf(stderr, "[WARN] xi=%d, yi=%d: x0=%d >= inWidth=%d or y0=%d >= inHeight=%d, skipping mask check\n", 
+                           xi, yi, x0, inWidth, y0, inHeight);
+                    continue;
+                }
                 
-                // [Fix] Ensure rect is inside image
-                if (x0 >= inWidth || y0 >= inHeight) continue;
+                // 确保矩形在图像范围内
                 if (x0 + x > inWidth) x = inWidth - x0;
                 if (y0 + y > inHeight) y = inHeight - y0;
-
+                
+                if (x <= 0 || y <= 0) {
+                    fprintf(stderr, "[WARN] xi=%d, yi=%d: invalid mask tile size %dx%d, skipping\n", xi, yi, x, y);
+                    continue;
+                }
+                
                 cv::Mat maskTile = inMask(cv::Rect(x0, y0, x, y));
 
                 // 判断maskTile是否全部为0
                 if (cv::countNonZero(maskTile) == 0) {
                     // 如果maskTile全部为0，跳过该tile
-                    cv::Mat inputTile = inimage(
-                        cv::Rect(x0, y0, x, y));
+                    cv::Mat inputTile = inimage(cv::Rect(x0, y0, x, y));
                     cv::Mat outputTile;
-                    cv::resize(inputTile, outputTile, cv::Size(x * scale, y * scale), 0, 0,
-                        cv::INTER_CUBIC);
+                    cv::resize(inputTile, outputTile, cv::Size(x * scale, y * scale), 0, 0, cv::INTER_CUBIC);
 
-                    outputTile.copyTo(
-                        outimage(cv::Rect(x0 * scale, y0 * scale, outputTile.cols,
-                            outputTile.rows)));
+                    // [FIX] 检查目标矩形是否在outimage范围内
+                    int dest_x = x0 * scale;
+                    int dest_y = y0 * scale;
+                    int dest_w = outputTile.cols;
+                    int dest_h = outputTile.rows;
+                    
+                    if (dest_x < 0 || dest_y < 0 || dest_x + dest_w > outimage.cols || dest_y + dest_h > outimage.rows) {
+                        fprintf(stderr, "[WARN] xi=%d, yi=%d: output rectangle out of bounds, adjusting\n", xi, yi);
+                        if (dest_x + dest_w > outimage.cols) dest_w = outimage.cols - dest_x;
+                        if (dest_y + dest_h > outimage.rows) dest_h = outimage.rows - dest_y;
+                        if (dest_w > 0 && dest_h > 0) {
+                            outputTile(cv::Rect(0, 0, dest_w, dest_h)).copyTo(
+                                outimage(cv::Rect(dest_x, dest_y, dest_w, dest_h)));
+                        }
+                    } else {
+                        outputTile.copyTo(outimage(cv::Rect(dest_x, dest_y, dest_w, dest_h)));
+                    }
                     skiped_tile++;
                     continue;
                 }
             }
 
-
-            // 从inimage中裁剪出含padding的tile （但是四边的tile需要再次padding）
+            // 从inimage中裁剪出含padding的tile
             int in_tile_x0 = (xi * tileWidth - xPrepadding);
             if (in_tile_x0 < 0)
                 in_tile_x0 = 0;
             
-            // [Fix] Boundary check
-            if (in_tile_x0 >= inWidth) continue;
-
+            // [FIX] 边界检查
+            if (in_tile_x0 >= inWidth) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: in_tile_x0=%d >= inWidth=%d, skipping\n", xi, yi, in_tile_x0, inWidth);
+                continue;
+            }
+                
             int in_tile_x1 = ((xi + 1) * tileWidth + xPrepadding);
             if (in_tile_x1 > inWidth)
                 in_tile_x1 = inWidth;
+                
+            // 确保宽度为正
+            if (in_tile_x1 <= in_tile_x0) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: invalid tile width %d, skipping\n", xi, yi, in_tile_x1 - in_tile_x0);
+                continue;
+            }
 
             // 从tile推理结果去除padding部分
-            int out_tile_x0 = scale * (xi == 0 ? 0 : xPrepadding);
+            int out_tile_x0 = scale * xPrepadding;
 
             // 绘制到outimage的位置
             int out_x0 = xi * tileWidth * scale;
             int out_tile_w = (xi + 1 == xtiles) ? inWidth * scale - out_x0 : tileWidth * scale;
-            
-            // [Fix] Check calculated rect size
+
+            // 计算当前tile的实际大小
             int current_tile_w = in_tile_x1 - in_tile_x0;
             int current_tile_h = in_tile_y1 - in_tile_y0;
-            if (current_tile_w <= 0 || current_tile_h <= 0) continue;
+            
+            if (current_tile_w <= 0 || current_tile_h <= 0) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: invalid tile size %dx%d, skipping\n", xi, yi, current_tile_w, current_tile_h);
+                continue;
+            }
 
             cv::Mat inputTile = inimage(cv::Rect(in_tile_x0, in_tile_y0, current_tile_w, current_tile_h));
 
             cv::Mat paddedTile;
-            // Check if padding is needed
             if (inputTile.cols < tilesize || inputTile.rows < tilesize) {
                 int t = (yi == 0) ? yPrepadding : 0;
                 int b = tilesize - (in_tile_y1 - in_tile_y0) - t;
-                if (b < 0) b = 0; // Safety check
+                if (b < 0) b = 0;
                 
                 int l = (xi == 0) ? xPrepadding : 0;
                 int r = tilesize - (in_tile_x1 - in_tile_x0) - l;
-                if (r < 0) r = 0; // Safety check
-
+                if (r < 0) r = 0;
+                
                 cv::copyMakeBorder(inputTile, paddedTile, t, b, l, r, cv::BORDER_CONSTANT);
-
                 pretreat_->convert(paddedTile.data, paddedTile.cols, paddedTile.rows,
-                    paddedTile.cols * paddedTile.channels(),
-                    input_tensor);
-
+                    paddedTile.cols * paddedTile.channels(), input_tensor);
             }
             else {
-                // No padding needed, but we still need to pass the correct size to pretreat
-                // The original logic used copyMakeBorder with 0,0,0,0 which just clones/copies
-                // We can optimize by just using inputTile directly if it matches tilesize
-                // But to keep consistent with original logic:
                 cv::copyMakeBorder(inputTile, paddedTile, 0, 0, 0, 0, cv::BORDER_CONSTANT);
                 pretreat_->convert(paddedTile.data, paddedTile.cols, paddedTile.rows,
-                    paddedTile.cols * paddedTile.channels(),
-                    input_tensor);
+                    paddedTile.cols * paddedTile.channels(), input_tensor);
             }
 
             bool r = interpreter_input->copyFromHostTensor(input_tensor);
-
             interpreter->runSession(session);
             cv::Mat outputTile = TensorToCvMat();
 
-
             if (!scale_checked) {
-                if(scale< 1e-5){
+                if (scale < 1e-5) {
                     fprintf(stderr, "[err] Invalid scale value: %d\n", scale);
                     return -1;
-				}
+                }
 
                 if (outputTile.cols != paddedTile.cols * scale || outputTile.rows != paddedTile.rows * scale) {
                     float actual_model_scale = static_cast<float>(outputTile.cols) / static_cast<float>(paddedTile.cols);
-                    if (actual_model_scale > 1e-5) { // Avoid division by zero or invalid scale
+                    if (actual_model_scale > 1e-5) {
                         this->interp_scale = static_cast<float>(scale) / actual_model_scale;
                         fprintf(stderr,
                             "\n[warn] Model scale: x%.2f, Target scale: x%d, Apply interp scale x%.2f\n",
                             actual_model_scale, scale, this->interp_scale);
                     }
                 }
-                scale_checked = true; // Mark as checked to avoid re-calculating
+                scale_checked = true;
             }
 
-            // Apply interpolation if a scale mismatch was found
+            // 应用插值如果发现比例不匹配
             if (std::abs(this->interp_scale - 1.0f) > 1e-5) {
                 cv::Mat tempTile;
-                // Resize the model's output to match the target scale
                 cv::resize(outputTile, tempTile, cv::Size(), this->interp_scale, this->interp_scale, cv::INTER_CUBIC);
                 outputTile = tempTile;
             }
 
-            // After potential resizing, the outputTile should have dimensions corresponding to the target 'scale'.
-            // Now, we double-check if the final tile size is as expected before cropping.
+            // 检查输出tile的大小是否正确
             if (outputTile.cols != tilesize * scale || outputTile.rows != tilesize * scale) {
                 fprintf(stderr,
                     "[err] Post-interpolation tile size is still incorrect. Expected %dx%d, but got %dx%d. Aborting.\n",
                     tilesize * scale, tilesize * scale, outputTile.cols, outputTile.rows);
-                return -1; // Critical error if even after correction the size is wrong
+                return -1;
             }
-            // --- END: MODIFIED LOGIC ---
 
-            // [Fix] Adjust crop rectangle for edge tiles
-            int crop_x = out_tile_x0;
-            int crop_y = out_tile_y0;
+            // [FIX] 边界检查：确保裁剪矩形在outputTile范围内
+            if (out_tile_x0 >= outputTile.cols || out_tile_y0 >= outputTile.rows) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: crop start (%d,%d) outside output tile %dx%d, skipping\n",
+                       xi, yi, out_tile_x0, out_tile_y0, outputTile.cols, outputTile.rows);
+                continue;
+            }
+            
+            // 调整裁剪宽度和高度，确保不超出边界
             int crop_w = out_tile_w;
             int crop_h = out_tile_h;
-
-            // Clamp crop rect to outputTile bounds
-            if (crop_x + crop_w > outputTile.cols) crop_w = outputTile.cols - crop_x;
-            if (crop_y + crop_h > outputTile.rows) crop_h = outputTile.rows - crop_y;
-            if (crop_w <= 0 || crop_h <= 0) continue;
-
-            cv::Rect cropRect(crop_x, crop_y, crop_w, crop_h);
-            cv::Mat croppedTile = outputTile;
-
-            // Only crop if rect is valid and smaller than full tile
-            if (cropRect.x >= 0 && cropRect.y >= 0 && 
-                cropRect.width > 0 && cropRect.height > 0 &&
-                (cropRect.width != outputTile.cols || cropRect.height != outputTile.rows)) {
-                 croppedTile = outputTile(cropRect);
+            if (out_tile_x0 + crop_w > outputTile.cols) {
+                crop_w = outputTile.cols - out_tile_x0;
             }
-            // If it's the first tile, we might need to handle the left/top padding removal correctly.
-            // Original logic: out_tile_x0 = scale * xPrepadding.
-            // For xi=0, in_tile_x0 was 0. So input has no left padding.
-            // We want to copy the whole result (excluding right padding if any) or just the valid part?
-            // Original logic for xi=0: out_tile_x0 = scale * xPrepadding?
-            // Let's check original logic:
-            // int out_tile_x0 = scale * xPrepadding; -> For xi=0, this shifts right by padding.
-            // But in_tile_x0 was forced to 0.
-            // So the input tile has NO left padding.
-            // The model output has NO left padding (assuming model is translation invariant or padding is handled).
-            // But we are cropping starting at out_tile_x0 (padding size)?
-            // This implies we are dropping the left part of the output for the first tile?
-            // That sounds wrong for the first tile.
-            // Usually for edge tiles, we only pad right/bottom.
-            // Let's look at the copyMakeBorder logic:
-            // int l = (xi == 0) ? xPrepadding : 0;
-            // If xi==0, l=xPrepadding. So we ADD padding on the left.
-            // So output DOES have left padding for xi=0.
-            // So out_tile_x0 = scale * xPrepadding is correct to skip the padded left part.
-            
-            // Final safety check for destination rect
-            int dst_x = out_x0;
-            int dst_y = out_y0;
-            int dst_w = croppedTile.cols;
-            int dst_h = croppedTile.rows;
-
-            if (dst_x + dst_w > outimage.cols) dst_w = outimage.cols - dst_x;
-            if (dst_y + dst_h > outimage.rows) dst_h = outimage.rows - dst_y;
-            
-            if (dst_w > 0 && dst_h > 0) {
-                croppedTile(cv::Rect(0, 0, dst_w, dst_h)).copyTo(
-                    outimage(cv::Rect(dst_x, dst_y, dst_w, dst_h)));
+            if (out_tile_y0 + crop_h > outputTile.rows) {
+                crop_h = outputTile.rows - out_tile_y0;
             }
+            
+            if (crop_w <= 0 || crop_h <= 0) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: invalid crop size %dx%d, skipping\n", xi, yi, crop_w, crop_h);
+                continue;
+            }
+
+            cv::Rect cropRect(out_tile_x0, out_tile_y0, crop_w, crop_h);
+            cv::Mat croppedTile = outputTile(cropRect);
+
+            // [FIX] 边界检查：确保目标矩形在outimage范围内
+            if (out_x0 >= outimage.cols || out_y0 >= outimage.rows) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: dest start (%d,%d) outside output image %dx%d, skipping\n",
+                       xi, yi, out_x0, out_y0, outimage.cols, outimage.rows);
+                continue;
+            }
+            
+            // 调整目标宽度和高度
+            int dest_w = croppedTile.cols;
+            int dest_h = croppedTile.rows;
+            if (out_x0 + dest_w > outimage.cols) {
+                dest_w = outimage.cols - out_x0;
+            }
+            if (out_y0 + dest_h > outimage.rows) {
+                dest_h = outimage.rows - out_y0;
+            }
+            
+            if (dest_w <= 0 || dest_h <= 0) {
+                fprintf(stderr, "[WARN] xi=%d, yi=%d: invalid dest size %dx%d, skipping\n", xi, yi, dest_w, dest_h);
+                continue;
+            }
+            
+            // 如果需要，调整源矩形
+            if (dest_w != croppedTile.cols || dest_h != croppedTile.rows) {
+                croppedTile = croppedTile(cv::Rect(0, 0, dest_w, dest_h));
+            }
+
+            croppedTile.copyTo(outimage(cv::Rect(out_x0, out_y0, dest_w, dest_h)));
 
             high_resolution_clock::time_point end = high_resolution_clock::now();
             double time_span_print_progress = duration_cast<duration<double>>(
@@ -553,7 +599,6 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
             float progress_tile = (float)(yi * xtiles + xi + 1);
             if (time_span_print_progress > 0.5 || (yi + 1 == ytiles && xi + 3 > xtiles)) {
                 double progress = progress_tile / (ytiles * xtiles);
-                // progress2 用于计算剩余时间，由于跳过的tile不会运行这段函数，因此不会出现分母为0或者分子为0的情况
                 double progress2 = (progress_tile - skiped_tile) / (ytiles * xtiles - skiped_tile);
                 double time_span = duration_cast<duration<double>>(end - begin).count();
 #ifdef __ANDROID__
@@ -564,10 +609,8 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
                     time_span / progress2 - time_span);
                 fflush(stderr);
 #endif
-
                 time_print_progress = end;
             }
-
         }
     }
 
@@ -575,28 +618,22 @@ int MNNSR::process(const cv::Mat& inimage, cv::Mat& outimage, const cv::Mat& mas
     fprintf(stderr, "                                        \r");
 #endif // !__ANDROID__
 
-
     if (color == Gray2YUV) {
-        // 把inimage转为YCbCr格式，放大scale倍，把通道2通道3复制给outimage的通道2通道3
         cv::Mat yuv;
         cv::cvtColor(inimage, yuv, cv::COLOR_BGR2YUV);
         cv::Mat yuv2;
         yuv2.create(inimage.rows * scale, inimage.cols * scale, CV_8UC3);
-        cv::resize(yuv, yuv2, cv::Size(inimage.cols * scale, inimage.rows * scale), 0, 0,
-            cv::INTER_CUBIC);
+        cv::resize(yuv, yuv2, cv::Size(inimage.cols * scale, inimage.rows * scale), 0, 0, cv::INTER_CUBIC);
         cv::cvtColor(yuv2, outimage, cv::COLOR_YUV2BGR);
     }
     else if (color == Gray2YCbCr) {
-        // 把inimage转为YCbCr格式，放大scale倍，把通道2通道3复制给outimage的通道2通道3
         cv::Mat ycc;
         cv::cvtColor(inimage, ycc, cv::COLOR_BGR2YCrCb);
         cv::Mat ycc2;
         ycc2.create(inimage.rows * scale, inimage.cols * scale, CV_8UC3);
-        cv::resize(ycc, ycc2, cv::Size(inimage.cols * scale, inimage.rows * scale), 0, 0,
-            cv::INTER_CUBIC);
+        cv::resize(ycc, ycc2, cv::Size(inimage.cols * scale, inimage.rows * scale), 0, 0, cv::INTER_CUBIC);
         cv::cvtColor(ycc2, outimage, cv::COLOR_YCrCb2BGR);
     }
-
 
     return 0;
 }
