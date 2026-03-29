@@ -36,9 +36,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     )
 
 else ()
-    target_link_libraries(${PROJECT_NAME} webp MNN MNN_CL MNN_Vulkan ${OpenCV_LIBS})
-    
+    # 修改：只链接合并后的 MNN 库，不再单独链接 MNN_CL 和 MNN_Vulkan
+    target_link_libraries(${PROJECT_NAME} webp MNN ${OpenCV_LIBS})
 endif ()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../CMake/assets.cmake)
-
