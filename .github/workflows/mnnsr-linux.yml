@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  ncnn_data_tag: "20250916"
+  ncnn_data_tag: "20260113"
 
 jobs:
   build:
@@ -100,7 +100,17 @@ jobs:
       - name: build mnn
         id: mnn
         run: |
-          mkdir build ;cd build; cmake ..  -DCMAKE_BUILD_TYPE=Release -DMNN_TENSORRT=OFF -DMNN_OPENGL=OFF  -DMNN_OPENCL=ON  -DMNN_VULKAN=ON  -DMNN_CUDA=ON  -DMNN_SEP_BUILD=OFF  && make -j$(nproc)
+          mkdir build ;cd build; cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+            -DMNN_TENSORRT=OFF \
+            -DMNN_OPENGL=OFF \
+            -DMNN_OPENCL=ON \
+            -DMNN_VULKAN=ON \
+            -DMNN_CUDA=ON \
+            -DMNN_SEP_BUILD=OFF \
+            && make -j$(nproc)
           mkdir ../libs ; cp -v $(find . -name "libMNN*.so") ../libs/ ; ls -lh ../libs/
         working-directory: 3rdparty/MNN
 

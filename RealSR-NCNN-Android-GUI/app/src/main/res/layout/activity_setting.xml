@@ -176,6 +176,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
+            android:text="@string/dir_output_format"
+            android:textSize="18sp" />
+
+        <Spinner
+            android:id="@+id/spinner_dir_format"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:entries="@array/dir_output_format"
+            android:padding="5dp"
+            android:textAlignment="center" />
+
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
             android:text="@string/save_name"
             android:textSize="18sp" />
 
@@ -203,6 +221,23 @@
             android:layout_marginLeft="10dp"
             android:layout_marginRight="10dp"
             android:entries="@array/name2"
+            android:padding="5dp"
+            android:textAlignment="center" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/save_name3"
+            android:textSize="18sp" />
+
+        <Spinner
+            android:id="@+id/spinner_name3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:entries="@array/name3"
             android:padding="5dp"
             android:textAlignment="center" />
 
@@ -255,6 +290,94 @@
             android:entries="@array/oriental_item"
             android:padding="5dp"
             android:textAlignment="center" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="15dp"
+            android:text="@string/hide_programs_title"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_magick"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_magick"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_resize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_resize"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_anime4k"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_anime4k"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_mnnsr"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_mnnsr"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_realsr"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_realsr"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_srmd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_srmd"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_waifu2x"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_waifu2x"
+            android:textSize="16sp" />
+
+        <CheckBox
+            android:id="@+id/check_hide_realcugan"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:padding="5dp"
+            android:text="@string/hide_realcugan"
+            android:textSize="16sp" />
 
         <!--
                 <Button

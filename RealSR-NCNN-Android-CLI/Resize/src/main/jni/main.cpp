@@ -151,17 +151,21 @@ static std::vector<int> parse_optarg_int_array(const char *optarg) {
 #include "platform.h"
 
 #include "filesystem_utils.h"
+#include "image_processor.h"
 
 static void print_usage() {
     fprintf(stderr, "Usage: resize-ncnn -i infile -o outfile [options]...\n\n");
     fprintf(stderr, "  -h                   show this help\n");
     fprintf(stderr, "  -v                   verbose output\n");
-    fprintf(stderr, "  -i input-path        input image path (jpg/png/webp) or directory\n");
-    fprintf(stderr, "  -o output-path       output image path (jpg/png/webp) or directory\n");
+    fprintf(stderr, "  -i input-path        input image path (jpg/png/webp/bmp/tiff) or directory (recursive)\n");
+    fprintf(stderr, "  -o output-path       output image path (jpg/png/webp/bmp/tiff) or directory\n");
     fprintf(stderr, "  -s scale             upscale ratio (4, default=4)\n");
     fprintf(stderr, "  -m mode        resize mode (bicubic/bilinear/nearest/avir/avir-lancir/de-nearest/de-nearest2/de-nearest3/perfectpixel, default=nearest)\n");
     fprintf(stderr, "  -n not-use-ncnn        bicubic/bilinear not use ncnn\n");
-    fprintf(stderr, "  -f format            output image format (jpg/png/webp, default=ext/png)\n");
+    fprintf(stderr, "  -f format            force output format (ignore alpha channel detection)\n");
+    fprintf(stderr, "  -e format            suggested output format (auto-convert to png if alpha detected)\n");
+    fprintf(stderr, "  -k skip-size         skip if output file exists and size >= threshold bytes (0=disable)\n");
+    fprintf(stderr, "  -p pattern           output name pattern for batch mode, placeholders: {name} {prog} {index} {timestamp} {datetime} {date} {time}\n");
 }
 
 #if _WIN32
@@ -199,12 +203,15 @@ int main(int argc, char **argv)
 #endif
     int verbose = 0;
     bool not_use_ncnn = false;
-    path_t format = PATHSTR("png");
+    path_t output_format;
+    path_t suggested_format;
+    long long skip_size = 0;
+    path_t name_pattern = PATHSTR("{name}");
 
 #if _WIN32
     setlocale(LC_ALL, "");
     wchar_t opt;
-    while ((opt = getopt(argc, argv, L"i:o:s:t:m:g:j:f:vxhn")) != (wchar_t)-1)
+    while ((opt = getopt(argc, argv, L"i:o:s:t:m:g:j:f:vxhkn:e:p:")) != (wchar_t)-1)
     {
         switch (opt)
         {
@@ -223,13 +230,22 @@ int main(int argc, char **argv)
             break;
 
         case L'f':
-            format = optarg;
+            output_format = optarg;
+            break;
+        case L'e':
+            suggested_format = optarg;
             break;
         case L'v':
             verbose = 1;
             break;
         case L'n':
             not_use_ncnn = true;
+            break;
+        case L'k':
+            skip_size = _wtoi64(optarg);
+            break;
+        case L'p':
+            name_pattern = optarg;
             break;
         case L't':
         case L'g':
@@ -242,7 +258,7 @@ int main(int argc, char **argv)
     }
 #else // _WIN32
     int opt;
-    while ((opt = getopt(argc, argv, "i:o:s:t:m:g:j:f:vxhn")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:s:t:m:g:j:f:vxhkn:e:p:")) != -1) {
         switch (opt) {
             case 'i':
                 inputpath = optarg;
@@ -260,13 +276,22 @@ int main(int argc, char **argv)
                 model = optarg;
                 break;
             case 'f':
-                format = optarg;
+                output_format = optarg;
+                break;
+            case 'e':
+                suggested_format = optarg;
                 break;
             case 'v':
                 verbose = 1;
                 break;
             case 'n':
                 not_use_ncnn = true;
+                break;
+            case 'k':
+                skip_size = atoll(optarg);
+                break;
+            case 'p':
+                name_pattern = optarg;
                 break;
             case 'g':
             case 't':
@@ -304,76 +329,55 @@ int main(int argc, char **argv)
     }
 
 
-    if (!path_is_directory(outputpath)) {
-        // guess format from outputpath no matter what format argument specified
+    if (!path_is_directory(outputpath))
+    {
         path_t ext = get_file_extension(outputpath);
-
-        if (ext == PATHSTR("png") || ext == PATHSTR("PNG")) {
-            format = PATHSTR("png");
-        } else if (ext == PATHSTR("webp") || ext == PATHSTR("WEBP")) {
-            format = PATHSTR("webp");
-        } else if (ext == PATHSTR("jpg") || ext == PATHSTR("JPG") || ext == PATHSTR("jpeg") ||
-                   ext == PATHSTR("JPEG")) {
-            format = PATHSTR("jpg");
-        } else {
-            fprintf(stderr, "invalid outputpath extension type\n");
+        if (!ext.empty() && output_format.empty())
+        {
+            if (ext == PATHSTR("png") || ext == PATHSTR("PNG"))
+                output_format = PATHSTR("png");
+            else if (ext == PATHSTR("webp") || ext == PATHSTR("WEBP"))
+                output_format = PATHSTR("webp");
+            else if (ext == PATHSTR("jpg") || ext == PATHSTR("JPG") || ext == PATHSTR("jpeg") || ext == PATHSTR("JPEG"))
+                output_format = PATHSTR("jpg");
+            else if (ext == PATHSTR("bmp") || ext == PATHSTR("BMP"))
+                output_format = PATHSTR("bmp");
+            else if (ext == PATHSTR("tif") || ext == PATHSTR("TIF") || ext == PATHSTR("tiff") || ext == PATHSTR("TIFF"))
+                output_format = PATHSTR("tiff");
+        }
+        if (!output_format.empty() && !is_supported_encode_format(output_format))
+        {
+            fprintf(stderr, "invalid output format\n");
             return -1;
         }
     }
 
-    if (format != PATHSTR("png") && format != PATHSTR("webp") && format != PATHSTR("jpg")) {
-        fprintf(stderr, "invalid format argument\n");
-        return -1;
-    }
-
-    // collect input and output filepath
     std::vector<path_t> input_files;
     std::vector<path_t> output_files;
     {
-        if (path_is_directory(inputpath) && path_is_directory(outputpath)) {
-            std::vector<path_t> filenames;
-            int lr = list_directory(inputpath, filenames);
-            if (lr != 0)
-                return -1;
+        path_t effective_format = output_format.empty() ? suggested_format : output_format;
 
-            const int count = filenames.size();
-            input_files.resize(count);
-            output_files.resize(count);
-
-            path_t last_filename;
-            path_t last_filename_noext;
-            for (int i = 0; i < count; i++) {
-                path_t filename = filenames[i];
-                path_t filename_noext = get_file_name_without_extension(filename);
-                path_t output_filename = filename_noext + PATHSTR('.') + format;
-
-                // filename list is sorted, check if output image path conflicts
-                if (filename_noext == last_filename_noext) {
-                    path_t output_filename2 = filename + PATHSTR('.') + format;
-#if _WIN32
-                    fwprintf(stderr, L"both %ls and %ls output %ls ! %ls will output %ls\n", filename.c_str(), last_filename.c_str(), output_filename.c_str(), filename.c_str(), output_filename2.c_str());
-#else
-                    fprintf(stderr, "both %s and %s output %s ! %s will output %s\n",
-                            filename.c_str(), last_filename.c_str(), output_filename.c_str(),
-                            filename.c_str(), output_filename2.c_str());
-#endif
-                    output_filename = output_filename2;
-                } else {
-                    last_filename = filename;
-                    last_filename_noext = filename_noext;
-                }
-
-                input_files[i] = inputpath + PATHSTR('/') + filename;
-                output_files[i] = outputpath + PATHSTR('/') + output_filename;
-            }
-        } else if (!path_is_directory(inputpath) && !path_is_directory(outputpath)) {
-            input_files.push_back(inputpath);
-            output_files.push_back(outputpath);
-        } else {
-            fprintf(stderr,
-                    "inputpath and outputpath must be either file or directory at the same time\n");
-            return -1;
+        path_t prog_name = path_t(argv[0]);
+        {
+            size_t last_sep = prog_name.find_last_of(PATHSTR("/\\"));
+            if (last_sep != path_t::npos)
+                prog_name = prog_name.substr(last_sep + 1);
+            size_t dot = prog_name.rfind(PATHSTR('.'));
+            if (dot != path_t::npos)
+                prog_name = prog_name.substr(0, dot);
+            const path_t ncnn_suffix = PATHSTR("-ncnn");
+            if (prog_name.size() > ncnn_suffix.size() &&
+                prog_name.compare(prog_name.size() - ncnn_suffix.size(), ncnn_suffix.size(), ncnn_suffix) == 0)
+                prog_name = prog_name.substr(0, prog_name.size() - ncnn_suffix.size());
         }
+
+        int ret = collect_input_output_files(inputpath, outputpath, effective_format, name_pattern, prog_name, input_files, output_files);
+        if (ret != 0)
+            return -1;
+
+        ret = filter_files_by_size_threshold(input_files, output_files, skip_size, verbose);
+        if (ret != 0)
+            return -1;
     }
 
     int prepadding = 0;
@@ -1025,7 +1029,7 @@ int main(int argc, char **argv)
             }
 
             path_t ext = get_file_extension(outputpath);
-            if (c == 4 &&
+            if (c == 4 && output_format.empty() &&
                 (ext == PATHSTR("jpg") || ext == PATHSTR("JPG") || ext == PATHSTR("jpeg") ||
                  ext == PATHSTR("JPEG"))) {
                 path_t output_filename2 = output_files[i] + PATHSTR(".png");

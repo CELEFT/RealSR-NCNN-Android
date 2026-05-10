@@ -94,6 +94,7 @@
     <string name="custom_command">自定义命令</string>
     <string name="use_cpu">NCNN尝试使用CPU推理 (CPU和GPU哪个更稳定是不确定的，但是CPU运算一定更慢)</string>
     <string name="save_format">导出时使用的格式</string>
+    <string name="dir_output_format">处理目录和多图时使用的输出格式</string>
     <string name="general">通用</string>
     <string name="output_not_exits">错误：没有待导出的文件</string>
     <string name="image_not_exists">图片不存在</string>
@@ -117,6 +118,7 @@
     <string name="show_serarch_view">显示命令输入框</string>
     <string name="save_name">导出单图使用的文件名</string>
     <string name="save_name2">导出多图使用的文件名</string>
+    <string name="save_name3">处理目录使用的目录名</string>
     <string name="save_path">导出图片的路径</string>
     <string name="download_models">下载模型</string>
     <string name="start">开始</string>
@@ -198,6 +200,12 @@
         <item>选择文件时间-序号</item>
         <item>选择文件时间-原文件名</item>
     </string-array>
+    <string-array name="name3">
+        <item>原目录名</item>
+        <item>原目录名-算法</item>
+        <item>原目录名-算法-时间</item>
+        <item>原目录名-时间</item>
+    </string-array>
     <string-array name="oriental_item">
         <item>默认</item>
         <item>自动</item>
@@ -210,6 +218,42 @@
         <item>详细 (进度+结果)</item>
         <item>详细 (完成后自动消失)</item>
     </string-array>
+    <string-array name="dir_output_format">
+        <item>原格式</item>
+        <item>jpg</item>
+        <item>png</item>
+        <item>bmp</item>
+        <item>webp</item>
+        <item>tiff</item>
+    </string-array>
+
+    <!-- 目录批处理页面 -->
+    <string name="dir_process_title">处理目录</string>
+    <string name="dir_input_label">输入目录：</string>
+    <string name="dir_output_label">输出目录：</string>
+    <string name="dir_model_label">选择模型：</string>
+    <string name="dir_select_btn">浏览</string>
+    <string name="dir_start_btn">开始批量处理</string>
+    <string name="dir_stop_btn">停止</string>
+    <string name="dir_no_selected">未选择目录</string>
+    <string name="dir_file_count">发现 %d 张图片</string>
+    <string name="dir_select_input_prompt">选择包含图片的输入目录</string>
+    <string name="dir_select_output_prompt">选择处理后图片的输出目录</string>
+    <string name="dir_service_error">服务未连接，请重试</string>
+    <string name="dir_model_error">无效的模型选择</string>
+    <string name="dir_log_hint">日志将显示在这里…</string>
+    <string name="dir_log_starting">正在处理目录：%s</string>
+    <string name="dir_log_output_to">输出目录：%s</string>
+    <string name="dir_log_complete">批量处理完成！</string>
+    <string name="dir_no_supported_commands">没有支持目录批量处理的命令，请使用主界面的单图或多图处理功能。</string>
+    <string name="dir_input_path_error">无法获取输入目录路径，请选择有效目录</string>
+    <string name="dir_input_invalid">输入路径不是有效的目录</string>
+    <string name="dir_output_path_error">请指定输出目录</string>
+    <string name="dir_input_hint">输入目录路径或使用浏览按钮选择</string>
+    <string name="dir_output_hint">输出目录路径或使用浏览按钮选择</string>
+    <string name="dir_auto_output_label">自动</string>
+    <string name="dir_auto_output_format">自动（%1$s）</string>
+    <string name="dir_menu_entry">目录批处理</string>
     <string name="notification_processing">正在处理...</string>
     <string name="notification_fail">失败</string>
     <string name="notification_channel_progress">处理进度</string>
@@ -218,4 +262,13 @@
     <string name="menu_perfectpixel">PerfectPixel修复</string>
     <string name="menu_perfectpixel1">PerfectPixel 缩小</string>
     <string name="menu_perfectpixel2">PerfectPixel 5X</string>
+    <string name="hide_programs_title">在命令列表中隐藏以下程序</string>
+    <string name="hide_realsr">隐藏 RealSR/ESRGAN (realsr-ncnn)</string>
+    <string name="hide_srmd">隐藏 SRMD (srmd-ncnn)</string>
+    <string name="hide_waifu2x">隐藏 Waifu2x (waifu2x-ncnn)</string>
+    <string name="hide_realcugan">隐藏 Real-CUGAN (realcugan-ncnn)</string>
+    <string name="hide_mnnsr">隐藏 MNNSR (mnnsr-ncnn)</string>
+    <string name="hide_resize">隐藏经典插值算法 (resize-ncnn)</string>
+    <string name="hide_magick">隐藏 ImageMagick (magick)</string>
+    <string name="hide_anime4k">隐藏 Anime4K</string>
 </resources>

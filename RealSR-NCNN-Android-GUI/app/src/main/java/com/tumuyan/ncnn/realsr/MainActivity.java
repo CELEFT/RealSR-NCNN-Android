@@ -55,8 +55,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
     private static final int SELECT_IMAGE = 1, SELECT_MULTI_IMAGE = 2;
@@ -79,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
     private MenuItem menuProgress;
     private Spinner spinner;
     private boolean newTask;
-    private int format, name, name2, notify;
+    private int format, name, name2, notify, dirOutputFormat;
     private String BUSY, ERR, DONE;
     private String outputSavePath = "";
     private String inputFileName = "";
@@ -89,6 +91,7 @@ public class MainActivity extends AppCompatActivity {
     private String[] command = null;
     private String log = "";
     private CommandListManager commandListManager;
+    private ProgressLogHelper progressLogHelper;
 
     private final String[] bench_mark_commands = new String[] {
             "./realsr-ncnn -c 46 -i img/PM5544.jpeg -o input.png  -m models-Real-ESRGAN",
@@ -231,6 +234,10 @@ public class MainActivity extends AppCompatActivity {
             if (keepScreen) {
                 logTextView.setKeepScreenOn(true);
             }
+        } else if (v == R.id.menu_dir_batch) {
+            Intent intent = new Intent(this, DirectoryProcessActivity.class);
+            startActivity(intent);
+            return true;
         } else
             q = "";
 
@@ -371,6 +378,7 @@ public class MainActivity extends AppCompatActivity {
         notify = mySharePerferences.getInt("notify", 0);
 
         format = mySharePerferences.getInt("format", 0);
+        dirOutputFormat = mySharePerferences.getInt("dirOutputFormat", 0);
         name = mySharePerferences.getInt("name", 0);
         name2 = mySharePerferences.getInt("name2", 0);
 
@@ -386,12 +394,15 @@ public class MainActivity extends AppCompatActivity {
                         .split("\\s+"));
         commandListManager.loadCustomLabels(mySharePerferences.getString("customLabels", ""));
 
-        command = commandListManager.commandList;
-        String[] displayLabels = commandListManager.getDisplayLabels(useCustomLabel);
+        Set<String> hiddenPrograms = mySharePerferences.getStringSet("hiddenPrograms", new HashSet<String>());
+        command = commandListManager.getFilteredCommands(hiddenPrograms);
+        String[] displayLabels = commandListManager.getFilteredLabels(hiddenPrograms, useCustomLabel);
 
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, displayLabels);
         spinner.setAdapter(adapter);
 
+        if (selectCommand >= command.length)
+            selectCommand = Math.max(0, command.length - 1);
         spinner.setSelection(selectCommand);
 
         savePath = mySharePerferences.getString("savePath", "");
@@ -905,6 +916,14 @@ public class MainActivity extends AppCompatActivity {
                 if (inputFile.isDirectory() && !inputIsGifAnimation) {
                     export_dir = true;
                     finalCmd = cmd.replace(" output.png ", " '" + savePath + "' ");
+                    String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
+                    if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length) {
+                        if (!finalCmd.contains(" -f ") && finalCmd.matches("./(realsr|srmd|waifu2x|realcugan|mnnsr)-ncnn.*")) {
+                            finalCmd += " -f " + dirFormats[dirOutputFormat];
+                        } else if (!finalCmd.contains(" -E ") && finalCmd.startsWith("./Anime4k")) {
+                            finalCmd += " -E ." + dirFormats[dirOutputFormat];
+                        }
+                    }
                 }
 
                 if (cmd.startsWith("./magick input.png") || cmd.startsWith("./resize-ncnn -i input.png")) {
@@ -985,100 +1004,94 @@ public class MainActivity extends AppCompatActivity {
         final String executionCmd = builder.build();
         final String effectivelyFinalCmd = finalCmd;
         final boolean final_export_dir = export_dir;
-        final StringBuilder logBuilder = new StringBuilder();
+
+        progressLogHelper = new ProgressLogHelper();
 
         if (isBound && processingService != null) {
+            progressLogHelper.reset();
             processingService.startTask(executionCmd, dir, notify, new ImageProcessor.ProcessCallback() {
                 @Override
                 public void onProgress(String line) {
-                    boolean p = run_ncnn && line.matches("\\s*\\d([0-9.]*)%(\\s.+)?");
-                    String progressText = line.trim().split("\\s")[0];
-
-                    if (!p) {
-                        logBuilder.append(line).append("\n");
-                    }
-
-                    final String textToDisplay = logBuilder.toString() + (p ? line : "");
+                    progressLogHelper.appendLine(line);
 
                     runOnUiThread(() -> {
-                        logTextView.setText(textToDisplay);
-                        if (p) {
-                            menuProgress.setTitle(progressText);
-                            // Notification is handled by Service now
+                        logTextView.setText(progressLogHelper.getDisplayText());
+                        if (progressLogHelper.hasProgress()) {
+                            menuProgress.setTitle(progressLogHelper.getProgressText());
                         }
                     });
                 }
 
                 @Override
                 public void onCompleted(String result, boolean success) {
-                    String logResult;
-                    if (!success)
-                        logResult = "\nfail, use " + (float) (System.currentTimeMillis() - timeStart) / 1000
-                                + " second";
-                    else
-                        logResult = "\nfinish, use " + (float) (System.currentTimeMillis() - timeStart) / 1000
-                                + " second";
+                    String logResult = progressLogHelper.getCompletionSummary(success, modelName, run_ncnn);
 
                     if (bench_mark_mode) {
-                        logResult += String.format(", Benchmark run on %s\n%s",
-                                DeviceInfo.getConfigStr(useCPU, tileSize), DeviceInfo.getInfo(MainActivity.this));
-                    } else if (run_ncnn) {
-                        logResult += ", " + modelName + "\n";
+                        logResult = logResult.replace("\n", String.format(", Benchmark run on %s\n%s",
+                                DeviceInfo.getConfigStr(useCPU, tileSize), DeviceInfo.getInfo(MainActivity.this)));
                     }
 
-                    String finalLog = logBuilder.toString() + logResult;
+                    progressLogHelper.appendLine(logResult);
+                    String finalLog = progressLogHelper.getFullLog();
                     log = finalLog;
 
                     runOnUiThread(() -> {
                         logTextView.setText(finalLog);
-                        menuProgress.setTitle(DONE);
-                        // Result notification still handled here
-                        // If failed (!success) and notify==3 (AutoDismiss), we force show notification.
+                        menuProgress.setTitle(success ? DONE : ERR);
                         boolean forceShow = !success && notify == 3;
                         sendNotification(MainActivity.this, success ? DONE : ERR, forceShow);
 
-                        if (save) {
-                            if (!outputFile.exists()) {
-                                Toast.makeText(getApplicationContext(), R.string.output_not_exits, Toast.LENGTH_SHORT)
-                                        .show();
-                            } else {
-                                checkSaveOutput();
-                            }
-                        } else if (final_export_dir) {
-                            Toast.makeText(getApplicationContext(), R.string.save_succeed, Toast.LENGTH_SHORT).show();
+                        if (keepScreen) {
+                            logTextView.setKeepScreenOn(false);
                         }
 
-                        if (inputFile.isDirectory()) {
-                            if (inputIsGifAnimation)
-                                scanFiles(new String[] { outputSavePath });
-                            else {
-                                File[] files = inputFile.listFiles();
-                                if (files != null) {
-                                    List<String> outputPaths = new ArrayList<>();
-                                    for (File file : files) {
-                                        outputPaths.add(savePath + File.separator + file.getName());
+                        if (success) {
+                            if (save) {
+                                if (!outputFile.exists()) {
+                                    Toast.makeText(getApplicationContext(), R.string.output_not_exits, Toast.LENGTH_SHORT)
+                                            .show();
+                                } else {
+                                    checkSaveOutput();
+                                }
+                            } else if (final_export_dir) {
+                                Toast.makeText(getApplicationContext(), R.string.save_succeed, Toast.LENGTH_SHORT).show();
+                            }
+
+                            if (!save && inputFile.isDirectory()) {
+                                if (inputIsGifAnimation)
+                                    scanFiles(new String[] { outputSavePath });
+                                else {
+                                    File[] files = inputFile.listFiles();
+                                    if (files != null) {
+                                        List<String> outputPaths = new ArrayList<>();
+                                        for (File file : files) {
+                                            outputPaths.add(savePath + File.separator + file.getName());
+                                        }
+                                        scanFiles(outputPaths.toArray(new String[0]));
                                     }
-                                    scanFiles(outputPaths.toArray(new String[0]));
                                 }
                             }
-                        }
 
-                        boolean showImgView = (effectivelyFinalCmd.contains("output.png"));
-                        if (showImgView) {
-                            if (outputFile.exists() && outputFile.isFile()) {
-                                updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log),
-                                        false);
-                            } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory()
-                                    && outputFile.listFiles().length > 1) {
-                                updateImage(outputFile.listFiles()[0].getPath(),
-                                        String.format("%s\n%s", getString(R.string.hr), log), false);
-                            } else {
-                                updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log),
-                                        false);
+                            boolean showImgView = (effectivelyFinalCmd.contains("output.png"));
+                            if (showImgView) {
+                                if (outputFile.exists() && outputFile.isFile()) {
+                                    updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log),
+                                            false);
+                                } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory()
+                                        && outputFile.listFiles().length > 1) {
+                                    updateImage(outputFile.listFiles()[0].getPath(),
+                                            String.format("%s\n%s", getString(R.string.hr), log), false);
+                                } else {
+                                    updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log),
+                                            false);
+                                }
                             }
+                            if (!effectivelyFinalCmd.contains("output.png"))
+                                imageView.setVisibility(View.GONE);
+                        } else {
+                            if (!effectivelyFinalCmd.contains("output.png"))
+                                imageView.setVisibility(View.GONE);
                         }
-                        if (!showImgView)
-                            imageView.setVisibility(View.GONE);
                     });
                 }
 
@@ -1087,6 +1100,10 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         logTextView.append("\nError: " + error);
                         sendNotification(MainActivity.this, ERR, true);
+
+                        if (keepScreen) {
+                            logTextView.setKeepScreenOn(false);
+                        }
                     });
                 }
             });
