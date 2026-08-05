@@ -439,8 +439,10 @@ public class DirectoryProcessActivity extends AppCompatActivity {
 
         String finalCmd = cmdBuilder.toString();
 
-        String execCmd = finalCmd.replace("input.png", "'" + inputPath + "/'")
-                .replace("output.png", "'" + outputPath + "'");
+        String safeInputPath = ShellUtils.escapeShellArgument(inputPath + "/");
+        String safeOutputPath = ShellUtils.escapeShellArgument(outputPath);
+        String execCmd = finalCmd.replace("input.png", safeInputPath)
+                .replace("output.png", safeOutputPath);
 
         progressLog = new ProgressLogHelper();
         progressLog.reset();

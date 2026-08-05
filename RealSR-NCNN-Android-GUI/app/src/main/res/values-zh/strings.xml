@@ -271,4 +271,5 @@
     <string name="hide_resize">隐藏经典插值算法 (resize-ncnn)</string>
     <string name="hide_magick">隐藏 ImageMagick (magick)</string>
     <string name="hide_anime4k">隐藏 Anime4K</string>
+    <string name="command_warn">⚠️在此处输入的命令将直接以 shell 权限执行，请确保您了解命令的含义。您需要为自己的操作承担全部责任。</string>
 </resources>

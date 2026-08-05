@@ -279,4 +279,5 @@ Even if this feature is disabled, you can still select multiple images from othe
     <string name="hide_resize">Hide Classical Interpolation (resize-ncnn)</string>
     <string name="hide_magick">Hide ImageMagick (magick)</string>
     <string name="hide_anime4k">Hide Anime4K</string>
+    <string name="command_warn">⚠️Commands entered here will be executed directly with shell permissions. Please ensure you understand the command\'s purpose. You are fully responsible for your actions.</string>
 </resources>

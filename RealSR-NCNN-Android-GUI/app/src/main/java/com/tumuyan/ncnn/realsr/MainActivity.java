@@ -65,7 +65,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int MY_PERMISSIONS_REQUEST = 100;
     private static final String CMD_CP_LIB_OPENCL = " if [ -e /system/vendor/lib64/libOpenCL.so ]; then cp /system/vendor/lib64/libOpenCL.so ./; elif [ -e /system/lib64/libOpenCL.so ]; then cp /system/lib64/libOpenCL.so ./; elif  [ -e /system/vendor/lib/libOpenCL.so ]; then cp /system/vendor/lib/libOpenCL.so ./; elif [ -e /system/lib/libOpenCL.so ]; then cp /system/lib/libOpenCL.so ./; else echo \"[warning]libOpenCL.so not find\"; fi; if [ -e /system/vendor/lib/egl/libGLES_mali.so ]; then cp /system/vendor/lib/egl/libGLES_mali.so ./; elif [ -e /system/lib/egl/libGLES_mali.so ]; then cp /system/lib/egl/libGLES_mali.so ./; else echo \"[warning]libGLES_mali.so not find\"; fi";
     private static final String CMD_RESET_CACHE = CMD_CP_LIB_OPENCL
-            + ";rm -f *.cache;rm -f */*.cache;chmod 777 *; echo Cache has been reset.;ls";
+            + ";rm -f *.cache;rm -f */*.cache;chmod +x *; echo Cache has been reset.;ls";
     private int selectCommand = 0;
     private String threadCount = "";
     private SubsamplingScaleImageView imageView;
@@ -74,8 +74,14 @@ public class MainActivity extends AppCompatActivity {
     private final String galleryPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
             + File.separator + "RealSR";
     private File outputFile, outputGif, inputFile, titleFile;
+
+    /**
+     * String dir 是应用的工作目录，用于存放临时文件和执行命令。
+     * 典型值： /data/data/com.tumuyan.ncnn.realsr/cache/realsr
+     * 在 onCreate() 阶段赋值，后续无法修改: dir = cache_dir + "/realsr";
+     * 其他应用无法访问或修改，使用此变量不存在注入风险。
+     */
     private String dir, cache_dir;
-    // dir="/data/data/com.tumuyan.ncnn.realsr/cache/realsr";
     private String modelName = "SR";
     private SearchView searchView;
     private MenuItem menuProgress;
@@ -521,9 +527,10 @@ public class MainActivity extends AppCompatActivity {
         showImage(titleFile, getString(R.string.default_log));
 
         if (version != BuildConfig.VERSION_CODE) {
-            run_command("cd " + dir + ";" + CMD_CP_LIB_OPENCL + "; chmod 777 *");
+            // dir 来自应用缓存目录，参数来源可信
+            run_command("cd " + dir + ";" + CMD_CP_LIB_OPENCL + " chmod +x *");
         } else {
-            run_command("chmod 777 " + dir + " -R");
+            run_command("chmod +x " + dir + " -R");
         }
 
         spinner = findViewById(R.id.spinner);
@@ -812,8 +819,9 @@ public class MainActivity extends AppCompatActivity {
             Process process = processBuilder.start();
 
             OutputStream os = process.getOutputStream();
-            String cmd = "cd " + dir + "; export LD_LIBRARY_PATH=" + dir + " ; "
-                    + "./magick  identify  -format  \"%T \" " + path + " ";
+            // dir 来自应用缓存目录，参数来源可信；path 为用户文件需转义
+            String cmd = "cd " + dir + "; export LD_LIBRARY_PATH=" + dir
+                    + "; ./magick identify -format \"%T \" " + ShellUtils.escapeShellArgument(path) + " ";
             os.write((cmd + "\n").getBytes());
             os.write("exit\n".getBytes());
             os.flush();
@@ -868,7 +876,9 @@ public class MainActivity extends AppCompatActivity {
 
             OutputStream os = process.getOutputStream();
             if (command.startsWith("./magick")) {
-                os.write(("cd " + dir + "; export LD_LIBRARY_PATH=" + dir + " ; " + command + "\n").getBytes());
+                // dir 来自应用缓存目录，参数来源可信
+                String magickCmd = "cd " + dir + "; export LD_LIBRARY_PATH=" + dir + "; " + command;
+                os.write((magickCmd + "\n").getBytes());
             } else {
                 os.write((command + "\n").getBytes());
             }
@@ -915,7 +925,8 @@ public class MainActivity extends AppCompatActivity {
             if (cmd.contains(" input.png ") && cmd.contains(" output.png")) {
                 if (inputFile.isDirectory() && !inputIsGifAnimation) {
                     export_dir = true;
-                    finalCmd = cmd.replace(" output.png ", " '" + savePath + "' ");
+                    String safeSavePath = ShellUtils.escapeShellArgument(savePath);
+                    finalCmd = cmd.replace(" output.png ", " " + safeSavePath + " ");
                     String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
                     if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length) {
                         if (!finalCmd.contains(" -f ") && finalCmd.matches("./(realsr|srmd|waifu2x|realcugan|mnnsr)-ncnn.*")) {
@@ -994,7 +1005,7 @@ public class MainActivity extends AppCompatActivity {
         if (save) {
             String export_cmd = saveOutputCmd();
             if (inputIsGifAnimation)
-                builder.append(";./magick -delay " + inputGifDelay + " output.png/* -loop 0 '" + outputSavePath + "'");
+                builder.append(";./magick -delay " + inputGifDelay + " output.png/* -loop 0 " + ShellUtils.escapeShellArgument(outputSavePath));
             else
                 builder.append(";" + export_cmd);
         } else {
@@ -1200,9 +1211,9 @@ public class MainActivity extends AppCompatActivity {
                         inputFile.mkdirs();
                         run_command("./magick tmp -coalesce -delay 0 input.png/%04d.png");
                     } else
-                        run_command("./magick tmp '" + path + "'");
+                        run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
                 } else {
-                    run_command("./magick tmp '" + path + "'");
+                    run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
                 }
             }
 
@@ -1344,7 +1355,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // 生成输出的图片的命令
+    // 生成输出图片的保存命令。采用"延迟转义"策略：在字符串构建阶段不进行转义，仅在最终返回时统一转义。
     private String saveOutputCmd() {
 
         SimpleDateFormat f = new SimpleDateFormat("MMdd_HHmmss");
@@ -1398,7 +1409,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        return cmd + " '" + outputSavePath + "'";
+        return cmd + " " + ShellUtils.escapeShellArgument(outputSavePath);
     }
 
 }

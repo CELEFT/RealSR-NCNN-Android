@@ -57,8 +57,8 @@ public class ImageProcessor {
             }
 
             OutputStream os = currentProcess.getOutputStream();
-            // 设置环境变量和权限
-            String setupCmd = "cd " + workingDir + "; chmod 777 *ncnn; export LD_LIBRARY_PATH=" + workingDir + "\n";
+            // workingDir 来自应用缓存目录（getCacheDir），参数来源可信
+            String setupCmd = "cd " + workingDir + "; chmod +x *ncnn 2>/dev/null; export LD_LIBRARY_PATH=" + workingDir + ";\n";
             os.write(setupCmd.getBytes());
             os.write((command + "\n").getBytes());
             os.write("exit\n".getBytes());
