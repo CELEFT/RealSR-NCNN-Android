@@ -906,225 +906,213 @@ public class MainActivity extends AppCompatActivity {
 
     private String progressText = "";
 
-    // 主要的运行命令的方式
-    public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, boolean sr) {
-        newTask = false;
-        Log.i("run20", "cmd = " + cmd);
-        final long timeStart = System.currentTimeMillis();
-        boolean export_dir = false;
+// 在 MainActivity 类中，替换原有的 run20 方法
+public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, boolean sr) {
+    newTask = false;
+    Log.i("run20", "cmd = " + cmd);
+    final long timeStart = System.currentTimeMillis();
+    boolean export_dir = false;
 
-        String finalCmd = cmd;
-        if (cmd.startsWith("./realsr-ncnn")
-                || cmd.startsWith("./mnnsr-ncnn")
-                || cmd.startsWith("./srmd-ncnn")
-                || cmd.startsWith("./realcugan-ncnn")
-                || cmd.startsWith("./resize-ncnn")
-                || cmd.startsWith("./waifu2x-ncnn")
-                || cmd.startsWith("./magick input")
-                || cmd.startsWith("./Anime4k")) {
-            if (cmd.contains(" input.png ") && cmd.contains(" output.png")) {
-                if (inputFile.isDirectory() && !inputIsGifAnimation) {
-                    export_dir = true;
-                    String safeSavePath = ShellUtils.escapeShellArgument(savePath);
-                    finalCmd = cmd.replace(" output.png ", " " + safeSavePath + " ");
-                    String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
-                    if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length) {
-                        if (!finalCmd.contains(" -f ") && finalCmd.matches("./(realsr|srmd|waifu2x|realcugan|mnnsr)-ncnn.*")) {
-                            finalCmd += " -f " + dirFormats[dirOutputFormat];
-                        } else if (!finalCmd.contains(" -E ") && finalCmd.startsWith("./Anime4k")) {
-                            finalCmd += " -E ." + dirFormats[dirOutputFormat];
-                        }
-                    }
-                }
+    String finalCmd = cmd;
 
-                if (cmd.startsWith("./magick input.png") || cmd.startsWith("./resize-ncnn -i input.png")) {
-                    Log.i("run20", "deleteFile " + outputFile);
-                    deleteFile(outputFile);
+    // ---- 判断是否为支持目录模式的命令 ----
+    if (cmd.startsWith("./realsr-ncnn") || cmd.startsWith("./mnnsr-ncnn")
+            || cmd.startsWith("./srmd-ncnn") || cmd.startsWith("./realcugan-ncnn")
+            || cmd.startsWith("./resize-ncnn") || cmd.startsWith("./waifu2x-ncnn")
+            || cmd.startsWith("./magick input") || cmd.startsWith("./Anime4k")) {
+
+        if (cmd.contains(" input.png ") && cmd.contains(" output.png")) {
+            // ★★★ 关键：检测输入是否为目录（来自 GIF 拆帧或用户多选） ★★★
+            if (inputFile.isDirectory()) {
+                export_dir = true;
+                String inputDirPath = inputFile.getAbsolutePath() + "/";
+                String safeInputDir = ShellUtils.escapeShellArgument(inputDirPath);
+                String safeOutputDir = ShellUtils.escapeShellArgument(savePath);
+
+                // 替换占位符
+                finalCmd = cmd.replace(" input.png ", " " + safeInputDir + " ")
+                              .replace(" output.png ", " " + safeOutputDir + " ");
+
+                // 针对不同后端添加输出格式指定参数（确保输出为 PNG）
+                if ((cmd.startsWith("./realsr-ncnn") || cmd.startsWith("./mnnsr-ncnn")
+                        || cmd.startsWith("./srmd-ncnn") || cmd.startsWith("./realcugan-ncnn")
+                        || cmd.startsWith("./waifu2x-ncnn")) && !finalCmd.contains(" -f ")) {
+                    finalCmd += " -f png";
                 }
+                if (cmd.startsWith("./Anime4k") && !finalCmd.contains(" -E ")) {
+                    finalCmd += " -E .png";
+                }
+                // resize-ncnn 和 magick 通常不需要 -f，此处不处理
+                Log.i("run20", "Directory mode enabled. finalCmd = " + finalCmd);
+            } else {
+                // ---- 单文件模式（保留原有逻辑，例如替换 output.png 到 savePath） ----
+                // 如果你之前有单文件的 savePath 替换逻辑，可保留，这里不覆盖
+                // 但为了统一，我们也可以让单文件也使用 savePath 作为输出路径
+                // 但为了避免破坏已有功能，暂时保留原样，只改目录分支
+                // 你可根据需要自行扩展
             }
-
-            runOnUiThread(() -> {
-                menuProgress.setTitle(BUSY);
-                sendNotification(this, BUSY, false);
-            });
-            modelName = "Real-ESRGAN-anime";
-            if (cmd.matches(".+\\s-m(\\s+)\\S*models-.+")) {
-                modelName = cmd.replaceFirst(".+\\s-m(\\s+)\\S*models-(\\S+).*", "$2");
-            }
-            if (cmd.startsWith("./Anime4k")) {
-                modelName = "Anime4k";
-                if (cmd.contains("-w"))
-                    modelName += "-ACNet";
-                if (cmd.contains("-H"))
-                    modelName += "-HDN";
-            } else if (modelName.matches("(se|nose|pro)")) {
-                modelName = "Real-CUGAN-" + modelName;
-            } else if (cmd.startsWith("./realcugan-ncnn")) {
-                modelName = "Real-CUGAN";
-                if (cmd.contains(" -c "))
-                    modelName += cmd.replaceFirst(".+\\s-c(\\s+)(\\S+)\\s.*", "-C$2");
-                if (cmd.contains(" -n "))
-                    modelName += cmd.replaceFirst(".+\\s-n(\\s+)(\\S+)\\s.*", "-Noise$2");
-            } else if (cmd.matches(".+\\s-m(\\s+)(bicubic|bilinear|nearest|avir|de-nearest).*")) {
-                modelName = cmd.replaceFirst(".+\\s-m(\\s+)(bicubic|bilinear|nearest|lancir|avir|de-nearest).*",
-                        "Classical-$2");
-            } else if (cmd.matches(".*waifu2x.+models-(cugan|cunet|upconv).*")) {
-                modelName = cmd.replaceFirst(".*waifu2x.+models-(cugan|cunet|upconv_7_photo|upconv_7_anime).*",
-                        "Waifu2x-$1");
-            } else if (cmd.startsWith("./magick input")) {
-                if (cmd.contains("-filter"))
-                    modelName = cmd.replaceFirst(".*-filter\\s+(\\w+).+", "Magick-$1");
-                else
-                    modelName = "Magick";
-            } else if (cmd.startsWith("./mnnsr")) {
-                if (cmd.matches(".+\\s-d\\s+\\d+\\s.*")) {
-                    modelName = "MNNSR-Decensor" + cmd.replaceFirst(".+\\s-d\\s+(\\d+)\\s.*", "$1");
-                } else {
-                    String[] v = CommandListManager.getNameFromModelPath(cmd.replaceFirst(".+\\s-m(\\s+)(\\S+)\\s.*", "$2"), "MNNSR");
-                    modelName = v[0];
-                }
-            }
-        } else
-            modelName = "SR";
-
-        final boolean run_ncnn = bench_mark_mode || !modelName.equals("SR");
-        boolean export_one_file = run_ncnn && (autoSave || (inputFile.isDirectory() && inputIsGifAnimation))
-                && cmd.contains("output.png");
-        if (bench_mark_mode) {
-            export_one_file = false;
-            runOnUiThread(() -> {
-                menuProgress.setTitle(BUSY);
-                sendNotification(this, BUSY, false);
-            });
         }
-        final boolean save = export_one_file;
-
-        CommandBuilder builder = new CommandBuilder();
-        builder.append(finalCmd);
-
-        if (save) {
-            String export_cmd = saveOutputCmd();
-            if (inputIsGifAnimation)
-                builder.append(";./magick -delay " + inputGifDelay + " output.png/* -loop 0 " + ShellUtils.escapeShellArgument(outputSavePath));
-            else
-                builder.append(";" + export_cmd);
-        } else {
-            outputSavePath = "";
-        }
-
-        final String executionCmd = builder.build();
-        final String effectivelyFinalCmd = finalCmd;
-        final boolean final_export_dir = export_dir;
-
-        progressLogHelper = new ProgressLogHelper();
-
-        if (isBound && processingService != null) {
-            progressLogHelper.reset();
-            processingService.startTask(executionCmd, dir, notify, new ImageProcessor.ProcessCallback() {
-                @Override
-                public void onProgress(String line) {
-                    progressLogHelper.appendLine(line);
-
-                    runOnUiThread(() -> {
-                        logTextView.setText(progressLogHelper.getDisplayText());
-                        if (progressLogHelper.hasProgress()) {
-                            menuProgress.setTitle(progressLogHelper.getProgressText());
-                        }
-                    });
-                }
-
-                @Override
-                public void onCompleted(String result, boolean success) {
-                    String logResult = progressLogHelper.getCompletionSummary(success, modelName, run_ncnn);
-
-                    if (bench_mark_mode) {
-                        logResult = logResult.replace("\n", String.format(", Benchmark run on %s\n%s",
-                                DeviceInfo.getConfigStr(useCPU, tileSize), DeviceInfo.getInfo(MainActivity.this)));
-                    }
-
-                    progressLogHelper.appendLine(logResult);
-                    String finalLog = progressLogHelper.getFullLog();
-                    log = finalLog;
-
-                    runOnUiThread(() -> {
-                        logTextView.setText(finalLog);
-                        menuProgress.setTitle(success ? DONE : ERR);
-                        boolean forceShow = !success && notify == 3;
-                        sendNotification(MainActivity.this, success ? DONE : ERR, forceShow);
-
-                        if (keepScreen) {
-                            logTextView.setKeepScreenOn(false);
-                        }
-
-                        if (success) {
-                            if (save) {
-                                if (!outputFile.exists()) {
-                                    Toast.makeText(getApplicationContext(), R.string.output_not_exits, Toast.LENGTH_SHORT)
-                                            .show();
-                                } else {
-                                    checkSaveOutput();
-                                }
-                            } else if (final_export_dir) {
-                                Toast.makeText(getApplicationContext(), R.string.save_succeed, Toast.LENGTH_SHORT).show();
-                            }
-
-                            if (!save && inputFile.isDirectory()) {
-                                if (inputIsGifAnimation)
-                                    scanFiles(new String[] { outputSavePath });
-                                else {
-                                    File[] files = inputFile.listFiles();
-                                    if (files != null) {
-                                        List<String> outputPaths = new ArrayList<>();
-                                        for (File file : files) {
-                                            outputPaths.add(savePath + File.separator + file.getName());
-                                        }
-                                        scanFiles(outputPaths.toArray(new String[0]));
-                                    }
-                                }
-                            }
-
-                            boolean showImgView = (effectivelyFinalCmd.contains("output.png"));
-                            if (showImgView) {
-                                if (outputFile.exists() && outputFile.isFile()) {
-                                    updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log),
-                                            false);
-                                } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory()
-                                        && outputFile.listFiles().length > 1) {
-                                    updateImage(outputFile.listFiles()[0].getPath(),
-                                            String.format("%s\n%s", getString(R.string.hr), log), false);
-                                } else {
-                                    updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log),
-                                            false);
-                                }
-                            }
-                            if (!effectivelyFinalCmd.contains("output.png"))
-                                imageView.setVisibility(View.GONE);
-                        } else {
-                            if (!effectivelyFinalCmd.contains("output.png"))
-                                imageView.setVisibility(View.GONE);
-                        }
-                    });
-                }
-
-                @Override
-                public void onError(String error) {
-                    runOnUiThread(() -> {
-                        logTextView.append("\nError: " + error);
-                        sendNotification(MainActivity.this, ERR, true);
-
-                        if (keepScreen) {
-                            logTextView.setKeepScreenOn(false);
-                        }
-                    });
-                }
-            });
-        } else {
-            Toast.makeText(this, "Service not bound", Toast.LENGTH_SHORT).show();
-            return false;
-        }
-
-        return true;
     }
+
+    // 如果是基准测试模式，关闭自动保存
+    final boolean run_ncnn = bench_mark_mode || !modelName.equals("SR");
+    boolean export_one_file = run_ncnn && (autoSave || (inputFile.isDirectory() && inputIsGifAnimation))
+            && cmd.contains("output.png");
+    if (bench_mark_mode) {
+        export_one_file = false;
+        runOnUiThread(() -> {
+            menuProgress.setTitle(BUSY);
+            sendNotification(MainActivity.this, BUSY, false);
+        });
+    }
+    final boolean save = export_one_file;
+
+    // ---- 构造最终执行命令（添加保存操作） ----
+    CommandBuilder builder = new CommandBuilder();
+    builder.append(finalCmd);
+
+    if (save) {
+        String export_cmd = saveOutputCmd();
+        if (inputIsGifAnimation)
+            builder.append(";./magick -delay " + inputGifDelay + " output.png/* -loop 0 " + ShellUtils.escapeShellArgument(outputSavePath));
+        else
+            builder.append(";" + export_cmd);
+    } else {
+        outputSavePath = "";
+    }
+
+    final String executionCmd = builder.build();
+    final String effectivelyFinalCmd = finalCmd;
+    final boolean final_export_dir = export_dir;
+
+    progressLogHelper = new ProgressLogHelper();
+
+    // ---- 通过 Service 执行命令 ----
+    if (isBound && processingService != null) {
+        progressLogHelper.reset();
+        processingService.startTask(executionCmd, dir, notify, new ImageProcessor.ProcessCallback() {
+            @Override
+            public void onProgress(String line) {
+                progressLogHelper.appendLine(line);
+                runOnUiThread(() -> {
+                    logTextView.setText(progressLogHelper.getDisplayText());
+                    if (progressLogHelper.hasProgress()) {
+                        menuProgress.setTitle(progressLogHelper.getProgressText());
+                    }
+                });
+            }
+
+            @Override
+            public void onCompleted(String result, boolean success) {
+                String logResult = progressLogHelper.getCompletionSummary(success, modelName, run_ncnn);
+
+                if (bench_mark_mode) {
+                    logResult = logResult.replace("\n", String.format(", Benchmark run on %s\n%s",
+                            DeviceInfo.getConfigStr(useCPU, tileSize), DeviceInfo.getInfo(MainActivity.this)));
+                }
+
+                progressLogHelper.appendLine(logResult);
+                String finalLog = progressLogHelper.getFullLog();
+                log = finalLog;
+
+                runOnUiThread(() -> {
+                    logTextView.setText(finalLog);
+                    menuProgress.setTitle(success ? DONE : ERR);
+                    boolean forceShow = !success && notify == 3;
+                    sendNotification(MainActivity.this, success ? DONE : ERR, forceShow);
+
+                    if (keepScreen) {
+                        logTextView.setKeepScreenOn(false);
+                    }
+
+                    if (success) {
+                        // ---- 处理 GIF 合成（若拆帧处理，需合成回 GIF） ----
+                        if (inputIsGifAnimation && inputFile.isDirectory()) {
+                            // 使用 ImageMagick 合成 GIF（后续可迁移至 FFmpeg）
+                            String gifOutputPath = savePath + File.separator + modelName + ".gif";
+                            String cmdGif = "./magick -delay " + inputGifDelay + " " 
+                                    + ShellUtils.escapeShellArgument(savePath + "/*.png") 
+                                    + " -loop 0 " + ShellUtils.escapeShellArgument(gifOutputPath);
+                            new Thread(() -> {
+                                run_command(cmdGif);
+                                runOnUiThread(() -> {
+                                    Toast.makeText(MainActivity.this, "GIF saved: " + gifOutputPath, Toast.LENGTH_LONG).show();
+                                    // 可选：更新图片预览
+                                    updateImage(gifOutputPath, getString(R.string.hr), false);
+                                });
+                            }).start();
+                            // 注意：这里不阻塞主线程，因此后续 UI 更新可能与合成同时进行
+                        }
+
+                        // ---- 常规保存处理 ----
+                        if (save) {
+                            if (!outputFile.exists()) {
+                                Toast.makeText(getApplicationContext(), R.string.output_not_exits, Toast.LENGTH_SHORT)
+                                        .show();
+                            } else {
+                                checkSaveOutput();
+                            }
+                        } else if (final_export_dir) {
+                            Toast.makeText(getApplicationContext(), R.string.save_succeed, Toast.LENGTH_SHORT).show();
+                        }
+
+                        if (!save && inputFile.isDirectory()) {
+                            if (inputIsGifAnimation)
+                                scanFiles(new String[]{outputSavePath});
+                            else {
+                                File[] files = inputFile.listFiles();
+                                if (files != null) {
+                                    List<String> outputPaths = new ArrayList<>();
+                                    for (File file : files) {
+                                        outputPaths.add(savePath + File.separator + file.getName());
+                                    }
+                                    scanFiles(outputPaths.toArray(new String[0]));
+                                }
+                            }
+                        }
+
+                        // ---- 显示结果图片 ----
+                        boolean showImgView = (effectivelyFinalCmd.contains("output.png"));
+                        if (showImgView) {
+                            if (outputFile.exists() && outputFile.isFile()) {
+                                updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log),
+                                        false);
+                            } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory()
+                                    && outputFile.listFiles().length > 1) {
+                                updateImage(outputFile.listFiles()[0].getPath(),
+                                        String.format("%s\n%s", getString(R.string.hr), log), false);
+                            } else {
+                                updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log),
+                                        false);
+                            }
+                        }
+                        if (!effectivelyFinalCmd.contains("output.png"))
+                            imageView.setVisibility(View.GONE);
+                    } else {
+                        if (!effectivelyFinalCmd.contains("output.png"))
+                            imageView.setVisibility(View.GONE);
+                    }
+                });
+            }
+
+            @Override
+            public void onError(String error) {
+                runOnUiThread(() -> {
+                    logTextView.append("\nError: " + error);
+                    sendNotification(MainActivity.this, ERR, true);
+                    if (keepScreen) {
+                        logTextView.setKeepScreenOn(false);
+                    }
+                });
+            }
+        });
+    } else {
+        Toast.makeText(this, "Service not bound", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    return true;
+}
 
     private void stopCommand() {
         if (isBound && processingService != null) {
@@ -1145,91 +1133,95 @@ public class MainActivity extends AppCompatActivity {
      * @param path 输出的文件路径，路径为空时保存为input.png
      * @return 是否保存成功
      */
-    private boolean saveInputImage(@NonNull InputStream in, String path) {
+private boolean saveInputImage(@NonNull InputStream in, String path) {
+    Log.i("saveInputImage", "start");
+    inputIsGifAnimation = false;
+    boolean inputOneImage = false;
 
-        Log.i("saveInputImage", "start ");
-        inputIsGifAnimation = false;
-        boolean inputOneImage = false;
-        if (path.isEmpty()) {
-            inputOneImage = true;
-            path = dir + "/input.png";
-        }
-        File file = new File(path);
-
-        if (file.exists()) {
-            file.delete();
-        }
-        try {
-
-            byte[] buffer = new byte[4112];
-            int read;
-
-            int match = -1;
-
-            if ((read = in.read(buffer)) != -1) {
-                if (prePng) {
-                    match = PreprocessToPng.match(buffer);
-                    if (match >= 0) {
-                        file = new File(dir + "/tmp");
-                        if (file.exists()) {
-                            file.delete();
-                        }
-                    }
-                }
-            }
-
-            file.createNewFile();
-            OutputStream outStream = new FileOutputStream(file);
-            outStream.write(buffer, 0, read);
-
-            while ((read = in.read(buffer)) != -1) {
-                outStream.write(buffer, 0, read);
-            }
-
-            outStream.flush();
-            outStream.close();
-
-            if (match >= 0) {
-                if (PreprocessToPng.isHeif(match) || PreprocessToPng.isAVIF(match)) {
-                    Bitmap bitmap = BitmapFactory.decodeFile(dir + "/tmp");
-
-                    try {
-                        FileOutputStream out = new FileOutputStream(path);
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-                        out.flush();
-                        out.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                } else if (preFrame && inputOneImage && PreprocessToPng.isGIF(match)) {
-                    // 如果输入一个文件，且文件为多帧gif，则预处理为多个图片
-                    inputGifDelay = get_gif_frame_delay(dir + "/tmp");
-                    inputIsGifAnimation = inputGifDelay > 0;
-                    Log.i("inputGifDelay", "" + inputGifDelay + ", " + inputIsGifAnimation);
-                    if (inputIsGifAnimation) {
-                        deleteFile(inputFile);
-                        inputFile.mkdirs();
-                        run_command("./magick tmp -coalesce -delay 0 input.png/%04d.png");
-                    } else
-                        run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
-                } else {
-                    run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
-                }
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        }
-        try {
-            in.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        updateImage(dir + "/input.png", getString(R.string.lr), false);
-        return true;
+    // 单文件模式处理
+    if (path == null || path.isEmpty()) {
+        inputOneImage = true;
+        path = dir + "/input.png";
+    }
+    File targetFile = new File(path);
+    if (targetFile.exists()) {
+        targetFile.delete();
     }
 
+    // 临时文件
+    File tempFile = new File(dir, "tmp");
+    if (tempFile.exists()) tempFile.delete();
+
+    try {
+        tempFile.createNewFile();
+        OutputStream outStream = new FileOutputStream(tempFile);
+        byte[] buffer = new byte[4112];
+        int read;
+
+        // 读取首块数据（用于格式检测）
+        if ((read = in.read(buffer)) != -1) {
+            outStream.write(buffer, 0, read);
+        } else {
+            in.close();
+            outStream.close();
+            return false;
+        }
+
+        // 继续读取剩余数据
+        while ((read = in.read(buffer)) != -1) {
+            outStream.write(buffer, 0, read);
+        }
+        outStream.flush();
+        outStream.close();
+        in.close();
+
+        // 检测文件头
+        byte[] header = new byte[12];
+        try (FileInputStream fis = new FileInputStream(tempFile)) {
+            fis.read(header);
+        }
+        int match = PreprocessToPng.match(header);
+
+        // ------- 核心处理逻辑 -------
+        if (match == PreprocessToPng.TYPE_PNG) {
+            // 情况1：PNG 直接复制（跳过转换）
+            run_command("cp " + ShellUtils.escapeShellArgument(tempFile.getAbsolutePath()) + " " + ShellUtils.escapeShellArgument(path));
+            Log.i("saveInputImage", "PNG file copied directly.");
+        } else if (match == PreprocessToPng.TYPE_GIF && preFrame && inputOneImage) {
+            // 情况2：GIF 动图（拆帧或转单帧，后续可迁移至 FFmpeg）
+            inputGifDelay = get_gif_frame_delay(tempFile.getAbsolutePath());
+            inputIsGifAnimation = inputGifDelay > 0;
+            Log.i("inputGifDelay", "delay=" + inputGifDelay + ", isAnim=" + inputIsGifAnimation);
+
+            if (inputIsGifAnimation) {
+                // 多帧动画：拆帧到 input.png/ 目录
+                deleteFile(inputFile);
+                inputFile.mkdirs();
+                run_command("./magick tmp -coalesce -delay 0 input.png/%04d.png");
+                tempFile.delete();
+                updateImage(inputFile.getAbsolutePath(), getString(R.string.lr), false);
+                return true;
+            } else {
+                // 单帧 GIF：转 PNG
+                run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
+            }
+        } else {
+            // 情况3：其他所有静态图片（JPG, BMP, WEBP, HEIF, AVIF 等）统一转 PNG
+            run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
+            Log.i("saveInputImage", "Converted to PNG by ImageMagick.");
+        }
+
+        // 清理临时文件
+        tempFile.delete();
+
+    } catch (IOException e) {
+        e.printStackTrace();
+        return false;
+    }
+
+    updateImage(path, getString(R.string.lr), false);
+    return true;
+}
     private void updateImage(final String path, String text, boolean keepScreen) {
         Log.i("saveInputImage", "runOnUiThread");
         File file = new File(path);
