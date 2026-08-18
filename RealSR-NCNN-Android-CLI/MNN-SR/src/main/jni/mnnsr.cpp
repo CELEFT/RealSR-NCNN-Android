@@ -3,7 +3,7 @@
 //
 #include "mnnsr.h"
 #include <thread>
-
+#include <set>
 #include "MNN/ErrorCode.hpp"
 #define MNN_USER_SET_DEVICE
 #include "MNN/MNNSharedContext.h"

@@ -2,7 +2,6 @@
 // Created by Yazii on 2025/5/1.
 // DCP model implementation converted from https://github.com/nanoskript/deepcreampy-onnx-docker
 // it couldn't works yet
-//
 
 #include "dcp.h"
 
@@ -259,11 +258,20 @@ DCP::find_regions(const cv::Mat &image, const cv::Scalar &mask_color) {
 // 扩展边界框
 cv::Rect DCP::expand_bounding(const cv::Mat &ori, const std::vector<cv::Point> &region,
                               double expand_factor) {
-    cv::Rect bounding = cv::boundingRect(region);
-    int width = bounding.width;
-    int height = bounding.height;
-    int center_x = bounding.x + width / 2;
-    int center_y = bounding.y + height / 2;
+    // 手动计算边界矩形（替代 OpenCV 5.0 中移除的 cv::boundingRect）
+    if (region.empty()) return cv::Rect();
+    int min_x = region[0].x, min_y = region[0].y;
+    int max_x = region[0].x, max_y = region[0].y;
+    for (const auto& pt : region) {
+        if (pt.x < min_x) min_x = pt.x;
+        if (pt.y < min_y) min_y = pt.y;
+        if (pt.x > max_x) max_x = pt.x;
+        if (pt.y > max_y) max_y = pt.y;
+    }
+    int width = max_x - min_x;
+    int height = max_y - min_y;
+    int center_x = min_x + width / 2;
+    int center_y = min_y + height / 2;
     int new_width = static_cast<int>(width * expand_factor);
     int new_height = static_cast<int>(height * expand_factor);
     int new_x = std::max(0, center_x - new_width / 2);

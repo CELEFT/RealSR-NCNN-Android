@@ -8,7 +8,7 @@
 #include "MNN/Tensor.hpp"
 #include "MNN/Interpreter.hpp"
 #include "MNN/ImageProcess.hpp"
-
+#include <iostream>
 using namespace MNN;
 
 /**
