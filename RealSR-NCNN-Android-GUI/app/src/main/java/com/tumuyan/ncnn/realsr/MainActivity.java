@@ -50,7 +50,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.FileInputStream;
+import java.io.FileInputStream;   // 必须保留：saveInputImage 文件头检测用
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -60,6 +60,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;   // 新增：run20 目录模式替换用
 
 public class MainActivity extends AppCompatActivity {
     private static final int SELECT_IMAGE = 1, SELECT_MULTI_IMAGE = 2;
@@ -172,108 +173,107 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+public boolean onOptionsItemSelected(@NonNull MenuItem item) {
 
-        final String q;
-        String imageName = "/output.png";
-        boolean bench_mark_mode = false;
-        int v = item.getItemId();
-        if (v == R.id.progress) {
-            stopCommand();
+    final String q;
+    String imageName = "/output.png";
+    boolean bench_mark_mode = false;
+    int v = item.getItemId();
+    if (v == R.id.progress) {
+        stopCommand();
+        return false;
+    } else if (v == R.id.menu_share) {
+        if (inputIsGifAnimation)
+            shareImage("output.gif");
+        else
+            shareImage("output.png");
+        return false;
+    } else if (v == R.id.menu_avir2) {
+        q = "./resize-ncnn -i input.png -o output.png  -m avir -s 0.5";
+    } else if (v == R.id.menu_nearest4) {
+        q = "./resize-ncnn -i input.png -o output.png  -m nearest -s 4";
+    } else if (v == R.id.menu_de_nearest) {
+        q = "./resize-ncnn -i input.png -o output.png  -m de-nearest";
+    } else if (v == R.id.menu_de_nearest2) {
+        q = "./resize-ncnn -i input.png -o output.png  -m de-nearest2";
+    } else if (v == R.id.menu_perfectpixel){
+        q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 0";
+    } else if (v == R.id.menu_perfectpixel1){
+        q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 1";
+    } else if (v == R.id.menu_perfectpixel2) {
+        q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 5";
+    } else if (v == R.id.menu_magick2) {
+        q = "./magick input.png -profile sRGB.icc -resize 50% -profile sRGB.icc output.png";
+    } else if (v == R.id.menu_magick3) {
+        q = "./magick input.png -profile sRGB.icc -resize 33.33% -profile sRGB.icc output.png";
+    } else if (v == R.id.menu_magick4) {
+        q = "./magick input.png -profile sRGB.icc -resize 25% -profile sRGB.icc output.png";
+    } else if (v == R.id.menu_out2in) {
+        if (inputIsGifAnimation) {
+            Toast.makeText(this, R.string.not_support_animation, Toast.LENGTH_SHORT).show();
             return false;
-        } else if (v == R.id.menu_share) {
-            if (inputIsGifAnimation)
-                shareImage("output.gif");
-            else
-                shareImage("output.png");
-            return false;
-        } else if (v == R.id.menu_avir2) {
-            q = "./resize-ncnn -i input.png -o output.png  -m avir -s 0.5";
-        } else if (v == R.id.menu_nearest4) {
-            q = "./resize-ncnn -i input.png -o output.png  -m nearest -s 4";
-        } else if (v == R.id.menu_de_nearest) {
-            q = "./resize-ncnn -i input.png -o output.png  -m de-nearest";
-        } else if (v == R.id.menu_de_nearest2) {
-            q = "./resize-ncnn -i input.png -o output.png  -m de-nearest2";
-        } else if (v == R.id.menu_perfectpixel){
-            q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 0";
-        } else if (v == R.id.menu_perfectpixel1){
-            q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 1";
-        } else if (v == R.id.menu_perfectpixel2) {
-            q = "./resize-ncnn -i input.png -o output.png  -m perfectpixel -s 5";
-        } else if (v == R.id.menu_magick2) {
-            q = "./magick input.png -resize 50% output.png";
-        } else if (v == R.id.menu_magick3) {
-            q = "./magick input.png -resize 33.33% output.png";
-        } else if (v == R.id.menu_magick4) {
-            q = "./magick input.png -resize 25% output.png";
-        } else if (v == R.id.menu_out2in) {
-            if (inputIsGifAnimation) {
-                Toast.makeText(this, R.string.not_support_animation, Toast.LENGTH_SHORT).show();
-                return false;
-            } else {
-                q = "cp output.png input.png";
-                imageName = "/input.png";
-            }
-        } else if (v == R.id.menu_in) {
-            q = "in";
-        } else if (v == R.id.menu_out) {
-            q = "out";
-        } else if (v == R.id.menu_help) {
-            q = "help";
-        } else if (v == R.id.menu_reset_cache) {
-            q = CMD_RESET_CACHE;
-            imageName = "";
-        } else if (v == R.id.menu_bench_mark) {
-            String append_param = "";
-            if (tileSize > 0)
-                append_param = " -t " + tileSize;
-            if (useCPU)
-                append_param += (" -g -1");
-
-            append_param += ";";
-            q = "rm -rf *.png; ls *.png; " + bench_mark_commands[0] + append_param + bench_mark_commands[1]
-                    + append_param;
-
-            imageName = "/img/realsr.png";
-            bench_mark_mode = true;
-            imageView.setVisibility(View.GONE);
-            if (keepScreen) {
-                logTextView.setKeepScreenOn(true);
-            }
-        } else if (v == R.id.menu_dir_batch) {
-            Intent intent = new Intent(this, DirectoryProcessActivity.class);
-            startActivity(intent);
-            return true;
-        } else
-            q = "";
-
-        if (!run_fake_command(q)) {
-            stopCommand();
-            String finalImageName = imageName;
-            boolean final_bench_mark_mode = bench_mark_mode;
-            new Thread(() -> {
-                if (q.equals(CMD_RESET_CACHE)) {
-                    AssetsCopyer.releaseAssets(this, "realsr", cache_dir, false);
-                }
-
-                run20(q, final_bench_mark_mode, false);
-                final File finalfile = new File(dir + finalImageName);
-                if (finalfile.exists() && (!finalfile.isDirectory())) {
-                    runOnUiThread(() -> {
-                        imageView.setVisibility(View.VISIBLE);
-                        imageView.setImage(ImageSource.uri(finalfile.getAbsolutePath()));
-                        logTextView.setKeepScreenOn(false);
-                    });
-                } else {
-                    runOnUiThread(() -> imageView.setVisibility(View.GONE));
-                }
-            }).start();
+        } else {
+            q = "cp output.png input.png";
+            imageName = "/input.png";
         }
+    } else if (v == R.id.menu_in) {
+        q = "in";
+    } else if (v == R.id.menu_out) {
+        q = "out";
+    } else if (v == R.id.menu_help) {
+        q = "help";
+    } else if (v == R.id.menu_reset_cache) {
+        q = CMD_RESET_CACHE;
+        imageName = "";
+    } else if (v == R.id.menu_bench_mark) {
+        String append_param = "";
+        if (tileSize > 0)
+            append_param = " -t " + tileSize;
+        if (useCPU)
+            append_param += (" -g -1");
 
-        return super.onOptionsItemSelected(item);
+        append_param += ";";
+        q = "rm -rf *.png; ls *.png; " + bench_mark_commands[0] + append_param + bench_mark_commands[1]
+                + append_param;
+
+        imageName = "/img/realsr.png";
+        bench_mark_mode = true;
+        imageView.setVisibility(View.GONE);
+        if (keepScreen) {
+            logTextView.setKeepScreenOn(true);
+        }
+    } else if (v == R.id.menu_dir_batch) {
+        Intent intent = new Intent(this, DirectoryProcessActivity.class);
+        startActivity(intent);
+        return true;
+    } else
+        q = "";
+
+    if (!run_fake_command(q)) {
+        stopCommand();
+        String finalImageName = imageName;
+        boolean final_bench_mark_mode = bench_mark_mode;
+        new Thread(() -> {
+            if (q.equals(CMD_RESET_CACHE)) {
+                AssetsCopyer.releaseAssets(this, "realsr", cache_dir, false);
+            }
+
+            run20(q, final_bench_mark_mode, false);
+            final File finalfile = new File(dir + finalImageName);
+            if (finalfile.exists() && (!finalfile.isDirectory())) {
+                runOnUiThread(() -> {
+                    imageView.setVisibility(View.VISIBLE);
+                    imageView.setImage(ImageSource.uri(finalfile.getAbsolutePath()));
+                    logTextView.setKeepScreenOn(false);
+                });
+            } else {
+                runOnUiThread(() -> imageView.setVisibility(View.GONE));
+            }
+        }).start();
     }
 
+    return super.onOptionsItemSelected(item);
+}
     // 删除文件或者目录
     public static void deleteFile(File f) {
         if (f.isDirectory()) {
@@ -922,7 +922,7 @@ public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, 
             || cmd.startsWith("./resize-ncnn") || cmd.startsWith("./waifu2x-ncnn")
             || cmd.startsWith("./magick input") || cmd.startsWith("./Anime4k")) {
 
-        if (cmd.contains(" input.png ") && cmd.contains(" output.png")) {
+        if (cmd.contains("input.png") && cmd.contains("output.png")) {
             // ★★★ 关键：检测输入是否为目录（来自 GIF 拆帧或用户多选） ★★★
             if (inputFile.isDirectory()) {
                 export_dir = true;
@@ -930,9 +930,12 @@ public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, 
                 String safeInputDir = ShellUtils.escapeShellArgument(inputDirPath);
                 String safeOutputDir = ShellUtils.escapeShellArgument(savePath);
 
-                // 替换占位符
-                finalCmd = cmd.replace(" input.png ", " " + safeInputDir + " ")
-                              .replace(" output.png ", " " + safeOutputDir + " ");
+                // 将 -i input.png 替换为 -i 目录路径/，-o output.png 替换为 -o savePath/
+                finalCmd = cmd
+                        .replaceAll("(?i)(\\s)-i\\s+input\\.png(?=\\s|$)",
+                                "$1-i " + Matcher.quoteReplacement(safeInputDir))
+                        .replaceAll("(?i)(\\s)-o\\s+output\\.png(?=\\s|$)",
+                                "$1-o " + Matcher.quoteReplacement(safeOutputDir));
 
                 // 针对不同后端添加输出格式指定参数（确保输出为 PNG）
                 if ((cmd.startsWith("./realsr-ncnn") || cmd.startsWith("./mnnsr-ncnn")
@@ -945,12 +948,6 @@ public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, 
                 }
                 // resize-ncnn 和 magick 通常不需要 -f，此处不处理
                 Log.i("run20", "Directory mode enabled. finalCmd = " + finalCmd);
-            } else {
-                // ---- 单文件模式（保留原有逻辑，例如替换 output.png 到 savePath） ----
-                // 如果你之前有单文件的 savePath 替换逻辑，可保留，这里不覆盖
-                // 但为了统一，我们也可以让单文件也使用 savePath 作为输出路径
-                // 但为了避免破坏已有功能，暂时保留原样，只改目录分支
-                // 你可根据需要自行扩展
             }
         }
     }
@@ -1128,10 +1125,15 @@ public synchronized boolean run20(@NonNull String cmd, boolean bench_mark_mode, 
     private int inputGifDelay;
 
     /**
-     * 保存文件
+     * 保存输入图片到工作目录（统一转为 PNG 供 ncnn/MNN 工具读取）。
+     * <p>
+     * 处理策略：
+     * 1. PNG  -> 直接 cp（最快，不做任何转换）
+     * 2. GIF  -> 多帧动画拆帧到 input.png/ 目录；单帧转 PNG
+     * 3. 其他 -> 调用 ./magick 转 PNG（JPG/BMP/WEBP/HEIF/AVIF 等）
      *
-     * @param in   输出的文件流
-     * @param path 输出的文件路径，路径为空时保存为input.png
+     * @param in   输入文件流
+     * @param path 输出路径；为空时保存为 dir/input.png
      * @return 是否保存成功
      */
 private boolean saveInputImage(@NonNull InputStream in, String path) {
@@ -1149,7 +1151,7 @@ private boolean saveInputImage(@NonNull InputStream in, String path) {
         targetFile.delete();
     }
 
-    // 临时文件
+    // 临时文件：先完整写入，用于文件头检测与后续转换
     File tempFile = new File(dir, "tmp");
     if (tempFile.exists()) tempFile.delete();
 
@@ -1176,20 +1178,30 @@ private boolean saveInputImage(@NonNull InputStream in, String path) {
         outStream.close();
         in.close();
 
-        // 检测文件头
+        // 读取文件头（前 12 字节足够识别常见格式）
         byte[] header = new byte[12];
         try (FileInputStream fis = new FileInputStream(tempFile)) {
-            fis.read(header);
+            int n = fis.read(header);
+            if (n < 4) {
+                // 文件过小，直接交给 magick 尝试转换
+                run_command("./magick tmp -profile sRGB.icc " + ShellUtils.escapeShellArgument(path));
+                Log.i("saveInputImage", "File too small for header detection, converted by ImageMagick.");
+                tempFile.delete();
+                return true;
+            }
         }
-        int match = PreprocessToPng.match(header);
+
+        int type = PreprocessToPng.match(header);
+        Log.i("saveInputImage", "detected format type=" + type);
 
         // ------- 核心处理逻辑 -------
-        if (match == PreprocessToPng.TYPE_PNG) {
-            // 情况1：PNG 直接复制（跳过转换）
-            run_command("cp " + ShellUtils.escapeShellArgument(tempFile.getAbsolutePath()) + " " + ShellUtils.escapeShellArgument(path));
+        if (type == PreprocessToPng.TYPE_PNG) {
+            // 情况1：PNG 直接复制（跳过转换，最快）
+            run_command("cp " + ShellUtils.escapeShellArgument(tempFile.getAbsolutePath())
+                    + " " + ShellUtils.escapeShellArgument(path));
             Log.i("saveInputImage", "PNG file copied directly.");
-        } else if (match == PreprocessToPng.TYPE_GIF && preFrame && inputOneImage) {
-            // 情况2：GIF 动图（拆帧或转单帧，后续可迁移至 FFmpeg）
+        } else if (type == PreprocessToPng.TYPE_GIF && preFrame && inputOneImage) {
+            // 情况2：GIF 动图（拆帧或转单帧）
             inputGifDelay = get_gif_frame_delay(tempFile.getAbsolutePath());
             inputIsGifAnimation = inputGifDelay > 0;
             Log.i("inputGifDelay", "delay=" + inputGifDelay + ", isAnim=" + inputIsGifAnimation);
@@ -1204,11 +1216,11 @@ private boolean saveInputImage(@NonNull InputStream in, String path) {
                 return true;
             } else {
                 // 单帧 GIF：转 PNG
-                run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
+                run_command("./magick tmp -profile sRGB.icc " + ShellUtils.escapeShellArgument(path));
             }
         } else {
             // 情况3：其他所有静态图片（JPG, BMP, WEBP, HEIF, AVIF 等）统一转 PNG
-            run_command("./magick tmp " + ShellUtils.escapeShellArgument(path));
+            run_command("./magick tmp -profile sRGB.icc " + ShellUtils.escapeShellArgument(path));
             Log.i("saveInputImage", "Converted to PNG by ImageMagick.");
         }
 
@@ -1351,58 +1363,55 @@ private boolean saveInputImage(@NonNull InputStream in, String path) {
     // 生成输出图片的保存命令。采用"延迟转义"策略：在字符串构建阶段不进行转义，仅在最终返回时统一转义。
     private String saveOutputCmd() {
 
-        SimpleDateFormat f = new SimpleDateFormat("MMdd_HHmmss");
-        outputSavePath = savePath + File.separator;
-        switch (name) {
-            case 0:
-                outputSavePath += modelName + "_" + f.format(new Date());
-                break;
-            case 1:
-                outputSavePath += inputFileName + "_" + modelName + "_" + f.format(new Date());
-                break;
-            case 2:
-                outputSavePath += inputFileName + "_" + modelName;
-                break;
-            case 3:
-                outputSavePath += inputFileName + "_" + f.format(new Date());
-                break;
-            case 4:
-                outputSavePath += inputFileName;
-                break;
-            default:
-                outputSavePath += "output";
-        }
-
-        String cmd;
-        if (inputIsGifAnimation) {
-            outputSavePath += ".gif";
-            cmd = ("cp " + dir + "/output.gif");
-        } else if (format == 0) {
-            outputSavePath += ".png";
-            cmd = ("cp " + dir + "/output.png");
-        } else {
-            // 其他格式需要使用image magic进行转换，会额外消耗时间。但是为了方便，没有写到新线程上。
-            // progress.setTitle(BUSY);
-            if (format == 1) {
-                outputSavePath += ".webp";
-                cmd = ("./magick output.png");
-            } else if (format == 2) {
-                outputSavePath += ".gif";
-                cmd = ("./magick output.png");
-            } else if (format == 3) {
-                outputSavePath += ".heic";
-                cmd = ("./magick output.png");
-            } else {
-                outputSavePath += ".jpg";
-                String q = formats[format].replaceAll("[a-zA-Z%\\s]+", "");
-                if (q.length() > 0) {
-                    cmd = ("./magick output.png -quality " + q);
-                } else
-                    cmd = ("./magick output.png");
-            }
-        }
-
-        return cmd + " " + ShellUtils.escapeShellArgument(outputSavePath);
+    SimpleDateFormat f = new SimpleDateFormat("MMdd_HHmmss");
+    outputSavePath = savePath + File.separator;
+    switch (name) {
+        case 0:
+            outputSavePath += modelName + "_" + f.format(new Date());
+            break;
+        case 1:
+            outputSavePath += inputFileName + "_" + modelName + "_" + f.format(new Date());
+            break;
+        case 2:
+            outputSavePath += inputFileName + "_" + modelName;
+            break;
+        case 3:
+            outputSavePath += inputFileName + "_" + f.format(new Date());
+            break;
+        case 4:
+            outputSavePath += inputFileName;
+            break;
+        default:
+            outputSavePath += "output";
     }
 
+    String cmd;
+    if (inputIsGifAnimation) {
+        outputSavePath += ".gif";
+        cmd = ("cp " + dir + "/output.gif");
+    } else if (format == 0) {
+        outputSavePath += ".png";
+        cmd = ("cp " + dir + "/output.png");
+    } else {
+        // 其他格式需要使用image magic进行转换
+        if (format == 1) {
+            outputSavePath += ".webp";
+            cmd = ("./magick output.png -profile sRGB.icc");
+        } else if (format == 2) {
+            outputSavePath += ".gif";
+            cmd = ("./magick output.png -profile sRGB.icc");
+        } else if (format == 3) {
+            outputSavePath += ".heic";
+            cmd = ("./magick output.png -profile sRGB.icc");
+        } else {
+            outputSavePath += ".jpg";
+            String q = formats[format].replaceAll("[a-zA-Z%\\s]+", "");
+            if (q.length() > 0) {
+                cmd = ("./magick output.png -profile sRGB.icc -quality " + q);
+            } else
+                cmd = ("./magick output.png -profile sRGB.icc");
+        }
+    }
+
+    return cmd + " " + ShellUtils.escapeShellArgument(outputSavePath);
 }

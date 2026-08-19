@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 
 #include <queue>
@@ -9,6 +8,9 @@
 #include <regex>
 #include <mutex>
 #include <condition_variable>
+
+#include <cstdlib>  // std::system（ensure_png_file 用）
+#include <cstring>  // memcmp（is_png_file 用）
 
 //#undef min
 //#undef max
@@ -225,6 +227,98 @@ public:
     std::vector<path_t> output_files;
 };
 
+// ==================== Android shell：非 PNG 输入预处理 ====================
+// 流程（严格按实际需求）：
+//   1. 读取文件头，忽略后缀名；是 PNG 直接跳过
+//   2. 非 PNG：mkdir -p tmp
+//   3. ./magick <原文件> -profile sRGB.icc tmp/a1.png（失败则去掉 -profile 重试）
+//   4. 校验 tmp/a1.png 是 PNG 后，mv -f tmp/a1.png <原文件>（即重命名覆盖 input.png）
+//   5. rm -r tmp 用完即删
+//   6. 返回后由 load() 读取（此时原文件已是 PNG 内容）
+// 注意：Android 环境没有 PATH，只能使用工作目录下的 ./magick。
+
+// 串行化转换，防止 OpenMP 多线程同时操作共享的 tmp 目录
+static std::mutex g_convert_mutex;
+
+// shell 单引号转义（与 Java 端 ShellUtils 同款）
+static std::string shell_quote(const std::string& s)
+{
+    std::string out = "'";
+    for (size_t i = 0; i < s.size(); i++)
+    {
+        char c = s[i];
+        if (c == '\'')
+            out += "'\\''";
+        else
+            out += c;
+    }
+    out += "'";
+    return out;
+}
+
+// 读取文件头判断是否为 PNG（忽略后缀名）
+static bool is_png_file(const path_t& filepath)
+{
+#if _WIN32
+    FILE* fp = _wfopen(filepath.c_str(), L"rb");
+#else
+    FILE* fp = fopen(filepath.c_str(), "rb");
+#endif
+    if (!fp)
+        return false;
+
+    unsigned char sig[8] = {0};
+    size_t n = fread(sig, 1, 8, fp);
+    fclose(fp);
+
+    if (n < 8)
+        return false;
+
+    static const unsigned char png_sig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    return memcmp(sig, png_sig, 8) == 0;
+}
+
+// 非 PNG 文件用 ./magick 就地转为 PNG（覆盖原文件）
+static void ensure_png_file(const path_t& imagepath)
+{
+    if (is_png_file(imagepath))
+        return; // 已是 PNG，跳过
+
+#if _WIN32
+    // Windows 分支：OpenCV 自带 jpg/webp/bmp/tiff 解码，无需转换；
+    // HEIF/AVIF 如需支持请自行补充（Android 走下面的分支）
+    return;
+#else
+    // Android / Linux：严格使用工作目录下的 ./magick（无 PATH，只能 ./）
+    std::lock_guard<std::mutex> lock(g_convert_mutex);
+
+    std::string quoted = shell_quote(imagepath);
+
+    // 1. 创建 tmp 目录（已存在则忽略错误）
+    std::system("mkdir -p tmp");
+
+    // 2. 调用 ./magick 转换（示例：./magick input.png -profile sRGB.icc a1.png）
+    std::string cmd = "./magick " + quoted + " -profile sRGB.icc tmp/a1.png";
+    int ret = std::system(cmd.c_str());
+    if (ret != 0)
+    {
+        // 当前目录没有 sRGB.icc 时，去掉 -profile 再试一次
+        cmd = "./magick " + quoted + " tmp/a1.png";
+        ret = std::system(cmd.c_str());
+    }
+
+    // 3. 校验转换结果确实是 PNG，再重命名覆盖原文件
+    if (ret == 0 && is_png_file(PATHSTR("tmp/a1.png")))
+    {
+        std::string mv = "mv -f tmp/a1.png " + quoted;
+        std::system(mv.c_str());
+    }
+
+    // 4. 用完即删
+    std::system("rm -r tmp");
+#endif
+}
+
 void *load(void *args) {
 
     const LoadThreadParams *ltp = (const LoadThreadParams *) args;
@@ -242,13 +336,16 @@ void *load(void *args) {
             fprintf(stderr, "load %s \n", imagepath.c_str());
 #endif
         }
-        // 读取图像
+        // 读取图像：非 PNG 先用 ./magick 转 PNG（覆盖原文件），再读取
+        ensure_png_file(imagepath);
+
         Mat image;
         #if _WIN32
             image = imread_unicode(imagepath, IMREAD_UNCHANGED);
         #else
-           image = imread(imagepath, IMREAD_UNCHANGED);
+            image = imread(imagepath, IMREAD_UNCHANGED);
         #endif
+
         if (image.empty()) {
 #if _WIN32
             fwprintf(stderr, L"decode image %ls failed\n", imagepath.c_str());

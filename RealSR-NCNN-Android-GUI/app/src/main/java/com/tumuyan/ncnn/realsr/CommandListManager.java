@@ -330,7 +330,7 @@ public class CommandListManager {
         String[] magickResize = { "200%", "400%", "1000%" };
         for (String f : magickFilters) {
             for (String s : magickResize) {
-                cmdList.add("./magick input.png -filter " + f + " -resize " + s + " output.png ");
+                cmdList.add("./magick input.png -profile sRGB.icc -filter " + f + " -resize " + s + " -profile sRGB.icc output.png ");
                 cmdLabel.add("Magick-" + f + "-x" + s.replaceFirst("(\\d+)00%", "$1"));
             }
         }

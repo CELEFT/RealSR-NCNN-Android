@@ -413,29 +413,39 @@ public class DirectoryProcessActivity extends AppCompatActivity {
         }
 
         String baseCommand = commandList[modelIndex];
-        StringBuilder cmdBuilder = new StringBuilder(baseCommand);
 
-        if (baseCommand.matches("./(realsr|srmd|waifu2x|realcugan|mnnsr)-ncnn.+")) {
-            if (tileSize > 0 && !baseCommand.contains(" -t "))
-                cmdBuilder.append(" -t ").append(tileSize);
-            if (!threadCount.isEmpty() && !baseCommand.contains(" -j "))
-                cmdBuilder.append(" -j ").append(threadCount);
-            if (useCPU && !baseCommand.startsWith("./srmd") && !baseCommand.startsWith("./mnnsr")
-                    && !baseCommand.contains(" -g "))
-                cmdBuilder.append(" -g -1");
-            if (baseCommand.startsWith("./mnnsr") && !baseCommand.contains(" -b ")) {
-                cmdBuilder.append(" -b ").append(mnnBackend);
-            }
-            String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
-            if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length && !baseCommand.contains(" -f ")) {
-                cmdBuilder.append(" -f ").append(dirFormats[dirOutputFormat]);
-            }
-        } else if (baseCommand.startsWith("./Anime4k")) {
-            String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
-            if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length && !baseCommand.contains(" -E ")) {
-                cmdBuilder.append(" -E .").append(dirFormats[dirOutputFormat]);
-            }
-        }
+// 如果是 magick 命令且未含 -profile，则插入 ICC
+if (baseCommand.startsWith("./magick") && !baseCommand.contains("-profile")) {
+    baseCommand = baseCommand.replaceFirst("input\\.png", "input.png -profile sRGB.icc");
+    baseCommand = baseCommand.replaceFirst("output\\.png", "-profile sRGB.icc output.png");
+}
+
+StringBuilder cmdBuilder = new StringBuilder(baseCommand);
+
+if (baseCommand.matches("./(realsr|srmd|waifu2x|realcugan|mnnsr)-ncnn.+")) {
+    if (tileSize > 0 && !baseCommand.contains(" -t ")) {
+        cmdBuilder.append(" -t ").append(tileSize);
+    }
+    if (!threadCount.isEmpty() && !baseCommand.contains(" -j ")) {
+        cmdBuilder.append(" -j ").append(threadCount);
+    }
+    if (useCPU && !baseCommand.startsWith("./srmd") && !baseCommand.startsWith("./mnnsr")
+            && !baseCommand.contains(" -g ")) {
+        cmdBuilder.append(" -g -1");
+    }
+    if (baseCommand.startsWith("./mnnsr") && !baseCommand.contains(" -b ")) {
+        cmdBuilder.append(" -b ").append(mnnBackend);
+    }
+    String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
+    if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length && !baseCommand.contains(" -f ")) {
+        cmdBuilder.append(" -f ").append(dirFormats[dirOutputFormat]);
+    }
+} else if (baseCommand.startsWith("./Anime4k")) {
+    String[] dirFormats = getResources().getStringArray(R.array.dir_output_format);
+    if (dirOutputFormat > 0 && dirOutputFormat < dirFormats.length && !baseCommand.contains(" -E ")) {
+        cmdBuilder.append(" -E .").append(dirFormats[dirOutputFormat]);
+    }
+}
 
         String finalCmd = cmdBuilder.toString();
 
